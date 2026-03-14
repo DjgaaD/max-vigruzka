@@ -60,13 +60,13 @@ function formatDateDisplay(yyyyMmDd: string): string {
   return `${d}.${m}.${y}`;
 }
 
-/** Дни календаря для месяца: { date: 'YYYY-MM-DD', day: number, isCurrentMonth, isPast } */
-function getCalendarDays(year: number, month: number) {
+/** Дни календаря для месяца. minDate — даты раньше неё считаются прошедшими (по умолчанию сегодня). */
+function getCalendarDays(year: number, month: number, minDate?: string) {
   const first = new Date(year, month - 1, 1);
   const last = new Date(year, month, 0);
   const startWeekday = first.getDay();
   const daysInMonth = last.getDate();
-  const today = todayYYYYMMDD();
+  const min = minDate || todayYYYYMMDD();
   const out: { date: string; day: number; isCurrentMonth: boolean; isPast: boolean }[] = [];
   const pad = (n: number) => String(n).padStart(2, '0');
   for (let i = 0; i < startWeekday; i++) {
@@ -80,13 +80,13 @@ function getCalendarDays(year: number, month: number) {
   }
   for (let d = 1; d <= daysInMonth; d++) {
     const date = `${year}-${pad(month)}-${pad(d)}`;
-    out.push({ date, day: d, isCurrentMonth: true, isPast: date < today });
+    out.push({ date, day: d, isCurrentMonth: true, isPast: date < min });
   }
   const rest = 42 - out.length;
   for (let i = 1; i <= rest; i++) {
     const next = new Date(year, month, i);
     const date = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}`;
-    out.push({ date, day: next.getDate(), isCurrentMonth: false, isPast: true });
+    out.push({ date, day: next.getDate(), isCurrentMonth: false, isPast: date < min });
   }
   return out;
 }
@@ -264,7 +264,13 @@ const App: React.FC = () => {
   const handleCreateAuction = async () => {
     if (!backendUser) return;
     if (!title || !workDate || !workTime || !auctionEndDate || !auctionEndTime) {
-      setError('Заполните название, дату и время работ и окончания аукциона.');
+      setError('Заполните название, дату и время работ и окончания поиска.');
+      return;
+    }
+    const workStart = new Date(`${workDate}T${workTime}:00`).getTime();
+    const searchEnd = new Date(`${auctionEndDate}T${auctionEndTime}:00`).getTime();
+    if (searchEnd <= workStart) {
+      setError('Дата и время окончания поиска должны быть позже даты и времени начала работ.');
       return;
     }
     const dateTimeISO = new Date(`${workDate}T${workTime}:00`).toISOString();
@@ -297,7 +303,7 @@ const App: React.FC = () => {
 
   return (
     <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif' }}>
-      <h2>Аукцион Грузчиков</h2>
+      <h2>Поиск грузчиков</h2>
       <p style={{ fontSize: 10, color: '#888' }}>сборка с отладкой v2</p>
       {webAppUser && (
         <p>
@@ -358,6 +364,40 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               >
                 {workDate ? formatDateDisplay(workDate) : 'Выберите дату'}
               </button>
+              {datePicker === 'work' && (
+                <div style={{ marginTop: 4, padding: 12, border: '1px solid #ccc', borderRadius: 12, background: '#f9f9f9' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <button type="button" onClick={() => setCalendarMonth((m) => (m.month === 1 ? { year: m.year - 1, month: 12 } : { year: m.year, month: m.month - 1 }))} style={{ padding: '4px 8px' }}>‹</button>
+                    <span style={{ fontWeight: 600 }}>{calendarMonth.month}/{calendarMonth.year}</span>
+                    <button type="button" onClick={() => setCalendarMonth((m) => (m.month === 12 ? { year: m.year + 1, month: 1 } : { year: m.year, month: m.month + 1 }))} style={{ padding: '4px 8px' }}>›</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 12 }}>
+                    {['Вс','Пн','Вт','Ср','Чт','Пт','Сб'].map((w) => <div key={w} style={{ textAlign: 'center', fontSize: 11, color: '#666' }}>{w}</div>)}
+                    {getCalendarDays(calendarMonth.year, calendarMonth.month).map((cell) => (
+                      <button
+                        key={cell.date}
+                        type="button"
+                        disabled={cell.isPast}
+                        onClick={() => cell.isCurrentMonth && !cell.isPast && setTempDate(cell.date)}
+                        style={{
+                          padding: 6,
+                          borderRadius: 6,
+                          border: tempDate === cell.date ? '2px solid #1976d2' : '1px solid #ddd',
+                          background: cell.isPast ? '#eee' : tempDate === cell.date ? '#e3f2fd' : '#fff',
+                          color: cell.isPast ? '#999' : cell.isCurrentMonth ? '#333' : '#999',
+                          cursor: cell.isPast ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {cell.day}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => setDatePicker(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc' }}>Отмена</button>
+                    <button type="button" onClick={() => { setWorkDate(tempDate); setDatePicker(null); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>ОК</button>
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label style={{ fontSize: 12, color: '#555' }}>Время начала работ (кратно 30 мин)</label>
@@ -368,9 +408,39 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               >
                 {workTime || 'Выберите время'}
               </button>
+              {timePicker === 'work' && (
+                <div style={{ marginTop: 4, padding: 12, border: '1px solid #ccc', borderRadius: 12, background: '#f9f9f9', maxHeight: 280, overflow: 'auto' }}>
+                  <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
+                    {timeOptions.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTempTime(t)}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: 10,
+                          textAlign: 'center',
+                          border: tempTime === t ? '2px solid #1976d2' : '1px solid #eee',
+                          borderRadius: 8,
+                          background: tempTime === t ? '#e3f2fd' : '#fff',
+                          marginBottom: 4,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => setTimePicker(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc' }}>Отмена</button>
+                    <button type="button" onClick={() => { setWorkTime(tempTime); setTimePicker(null); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>ОК</button>
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <label style={{ fontSize: 12, color: '#555' }}>Дата окончания аукциона</label>
+              <label style={{ fontSize: 12, color: '#555' }}>Дата окончания поиска</label>
               <button
                 type="button"
                 onClick={() => {
@@ -383,9 +453,43 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               >
                 {auctionEndDate ? formatDateDisplay(auctionEndDate) : 'Выберите дату'}
               </button>
+              {datePicker === 'auction' && (
+                <div style={{ marginTop: 4, padding: 12, border: '1px solid #ccc', borderRadius: 12, background: '#f9f9f9' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <button type="button" onClick={() => setCalendarMonth((m) => (m.month === 1 ? { year: m.year - 1, month: 12 } : { year: m.year, month: m.month - 1 }))} style={{ padding: '4px 8px' }}>‹</button>
+                    <span style={{ fontWeight: 600 }}>{calendarMonth.month}/{calendarMonth.year}</span>
+                    <button type="button" onClick={() => setCalendarMonth((m) => (m.month === 12 ? { year: m.year + 1, month: 1 } : { year: m.year, month: m.month + 1 }))} style={{ padding: '4px 8px' }}>›</button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 12 }}>
+                    {['Вс','Пн','Вт','Ср','Чт','Пт','Сб'].map((w) => <div key={w} style={{ textAlign: 'center', fontSize: 11, color: '#666' }}>{w}</div>)}
+                    {getCalendarDays(calendarMonth.year, calendarMonth.month, workDate || todayYYYYMMDD()).map((cell) => (
+                      <button
+                        key={cell.date}
+                        type="button"
+                        disabled={cell.isPast}
+                        onClick={() => cell.isCurrentMonth && !cell.isPast && setTempDate(cell.date)}
+                        style={{
+                          padding: 6,
+                          borderRadius: 6,
+                          border: tempDate === cell.date ? '2px solid #1976d2' : '1px solid #ddd',
+                          background: cell.isPast ? '#eee' : tempDate === cell.date ? '#e3f2fd' : '#fff',
+                          color: cell.isPast ? '#999' : cell.isCurrentMonth ? '#333' : '#999',
+                          cursor: cell.isPast ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {cell.day}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => setDatePicker(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc' }}>Отмена</button>
+                    <button type="button" onClick={() => { setAuctionEndDate(tempDate); setDatePicker(null); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>ОК</button>
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <label style={{ fontSize: 12, color: '#555' }}>Время окончания аукциона (кратно 30 мин)</label>
+              <label style={{ fontSize: 12, color: '#555' }}>Время окончания поиска (кратно 30 мин)</label>
               <button
                 type="button"
                 onClick={() => { setTimePicker('auction'); setTempTime(auctionEndTime || ''); }}
@@ -393,73 +497,37 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               >
                 {auctionEndTime || 'Выберите время'}
               </button>
+              {timePicker === 'auction' && (
+                <div style={{ marginTop: 4, padding: 12, border: '1px solid #ccc', borderRadius: 12, background: '#f9f9f9', maxHeight: 280, overflow: 'auto' }}>
+                  <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
+                    {timeOptions.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTempTime(t)}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: 10,
+                          textAlign: 'center',
+                          border: tempTime === t ? '2px solid #1976d2' : '1px solid #eee',
+                          borderRadius: 8,
+                          background: tempTime === t ? '#e3f2fd' : '#fff',
+                          marginBottom: 4,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" onClick={() => setTimePicker(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc' }}>Отмена</button>
+                    <button type="button" onClick={() => { setAuctionEndTime(tempTime); setTimePicker(null); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>ОК</button>
+                  </div>
+                </div>
+              )}
             </div>
-
-            {datePicker && (
-              <div style={{ marginTop: 8, padding: 12, border: '1px solid #ccc', borderRadius: 12, background: '#f9f9f9' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <button type="button" onClick={() => setCalendarMonth((m) => (m.month === 1 ? { year: m.year - 1, month: 12 } : { year: m.year, month: m.month - 1 }))} style={{ padding: '4px 8px' }}>‹</button>
-                  <span style={{ fontWeight: 600 }}>{calendarMonth.month}/{calendarMonth.year}</span>
-                  <button type="button" onClick={() => setCalendarMonth((m) => (m.month === 12 ? { year: m.year + 1, month: 1 } : { year: m.year, month: m.month + 1 }))} style={{ padding: '4px 8px' }}>›</button>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 12 }}>
-                  {['Вс','Пн','Вт','Ср','Чт','Пт','Сб'].map((w) => <div key={w} style={{ textAlign: 'center', fontSize: 11, color: '#666' }}>{w}</div>)}
-                  {getCalendarDays(calendarMonth.year, calendarMonth.month).map((cell) => (
-                    <button
-                      key={cell.date}
-                      type="button"
-                      disabled={cell.isPast}
-                      onClick={() => cell.isCurrentMonth && !cell.isPast && setTempDate(cell.date)}
-                      style={{
-                        padding: 6,
-                        borderRadius: 6,
-                        border: tempDate === cell.date ? '2px solid #1976d2' : '1px solid #ddd',
-                        background: cell.isPast ? '#eee' : tempDate === cell.date ? '#e3f2fd' : '#fff',
-                        color: cell.isPast ? '#999' : cell.isCurrentMonth ? '#333' : '#999',
-                        cursor: cell.isPast ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      {cell.day}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button type="button" onClick={() => setDatePicker(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc' }}>Отмена</button>
-                  <button type="button" onClick={() => { datePicker === 'work' ? setWorkDate(tempDate) : setAuctionEndDate(tempDate); setDatePicker(null); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>ОК</button>
-                </div>
-              </div>
-            )}
-
-            {timePicker && (
-              <div style={{ marginTop: 8, padding: 12, border: '1px solid #ccc', borderRadius: 12, background: '#f9f9f9', maxHeight: 280, overflow: 'auto' }}>
-                <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
-                  {timeOptions.map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setTempTime(t)}
-                      style={{
-                        display: 'block',
-                        width: '100%',
-                        padding: 10,
-                        textAlign: 'center',
-                        border: tempTime === t ? '2px solid #1976d2' : '1px solid #eee',
-                        borderRadius: 8,
-                        background: tempTime === t ? '#e3f2fd' : '#fff',
-                        marginBottom: 4,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button type="button" onClick={() => setTimePicker(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc' }}>Отмена</button>
-                  <button type="button" onClick={() => { timePicker === 'work' ? setWorkTime(tempTime) : setAuctionEndTime(tempTime); setTimePicker(null); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>ОК</button>
-                </div>
-              </div>
-            )}
             <Button disabled={loading} onClick={handleCreateAuction}>
               Разместить заявку
             </Button>
@@ -489,7 +557,7 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
       )}
       {backendUser && role === 'loader' && (
         <p style={{ marginTop: 24 }}>
-          Экран грузчика пока не реализован. Здесь будет список доступных аукционов и ставки.
+          Экран грузчика пока не реализован. Здесь будет список заявок и ставки.
         </p>
       )}
     </div>
