@@ -13,7 +13,9 @@ export const config = {
     database: process.env.DB_NAME || 'max_vigruzka'
   },
   maxBotToken: process.env.MAX_BOT_TOKEN || '',
-  adminMaxUserIds: adminIdsRaw ? adminIdsRaw.split(',').map((s) => Number(s.trim())).filter(Boolean) : [] as number[]
+  adminMaxUserIds: adminIdsRaw ? adminIdsRaw.split(',').map((s) => Number(s.trim())).filter(Boolean) : [] as number[],
+  adminLogin: process.env.ADMIN_LOGIN || '',
+  adminPassword: process.env.ADMIN_PASSWORD || ''
 };
 
 if (!config.maxBotToken) {

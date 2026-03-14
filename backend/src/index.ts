@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import cors from 'cors';
 import { json } from 'express';
@@ -5,6 +6,24 @@ import { config } from './config';
 import { initDb, pool } from './db';
 
 const app = express();
+
+const ADMIN_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const adminTokens = new Map<string, number>();
+
+function createAdminToken(): string {
+  const token = crypto.randomBytes(32).toString('hex');
+  adminTokens.set(token, Date.now() + ADMIN_TOKEN_TTL_MS);
+  return token;
+}
+
+function isAdminTokenValid(token: string): boolean {
+  const exp = adminTokens.get(token);
+  if (!exp || exp < Date.now()) {
+    if (exp) adminTokens.delete(token);
+    return false;
+  }
+  return true;
+}
 
 app.use(cors());
 app.use(json());
@@ -198,9 +217,27 @@ app.get('/auctions/my', async (req, res) => {
   }
 });
 
-// --- Админ-панель (все маршруты требуют admin_user_id и проверку роли admin) ---
-async function requireAdmin(adminUserId: number): Promise<{ ok: true } | { ok: false; status: number; body: object }> {
-  if (!adminUserId) return { ok: false, status: 400, body: { error: 'admin_user_id is required' } };
+// --- Вход в админку по логину/паролю (для браузера с сайта) ---
+app.post('/admin/auth', (req, res) => {
+  const { login, password } = req.body as { login?: string; password?: string };
+  if (!config.adminLogin || !config.adminPassword) {
+    return res.status(503).json({ error: 'admin_login_not_configured' });
+  }
+  if (login !== config.adminLogin || password !== config.adminPassword) {
+    return res.status(401).json({ error: 'invalid_credentials' });
+  }
+  const token = createAdminToken();
+  res.json({ token });
+});
+
+// --- Админ-панель: авторизация через Bearer token (сайт) или admin_user_id (MAX) ---
+async function requireAdmin(req: express.Request): Promise<{ ok: true } | { ok: false; status: number; body: object }> {
+  const authHeader = req.headers.authorization;
+  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (bearer && isAdminTokenValid(bearer)) return { ok: true };
+
+  const adminUserId = Number(req.query.admin_user_id);
+  if (!adminUserId) return { ok: false, status: 401, body: { error: 'admin auth required (Bearer token or admin_user_id)' } };
   const client = await pool.connect();
   try {
     const r = await client.query('select role from users where id = $1', [adminUserId]);
@@ -214,8 +251,7 @@ async function requireAdmin(adminUserId: number): Promise<{ ok: true } | { ok: f
 
 // Список всех пользователей с краткой статистикой
 app.get('/admin/users', async (req, res) => {
-  const adminUserId = Number(req.query.admin_user_id);
-  const check = await requireAdmin(adminUserId);
+  const check = await requireAdmin(req);
   if (!check.ok) return res.status(check.status).json(check.body);
 
   const client = await pool.connect();
@@ -265,8 +301,7 @@ app.get('/admin/users', async (req, res) => {
 
 // Детали пользователя: заявки, ставки
 app.get('/admin/users/:id', async (req, res) => {
-  const adminUserId = Number(req.query.admin_user_id);
-  const check = await requireAdmin(adminUserId);
+  const check = await requireAdmin(req);
   if (!check.ok) return res.status(check.status).json(check.body);
 
   const targetId = Number(req.params.id);
@@ -317,8 +352,7 @@ app.get('/admin/users/:id', async (req, res) => {
 
 // Блокировка / разблокировка
 app.post('/admin/users/:id/block', async (req, res) => {
-  const adminUserId = Number(req.query.admin_user_id);
-  const check = await requireAdmin(adminUserId);
+  const check = await requireAdmin(req);
   if (!check.ok) return res.status(check.status).json(check.body);
 
   const targetId = Number(req.params.id);
@@ -352,8 +386,7 @@ app.post('/admin/users/:id/block', async (req, res) => {
 
 // Статистика по сервису
 app.get('/admin/stats', async (req, res) => {
-  const adminUserId = Number(req.query.admin_user_id);
-  const check = await requireAdmin(adminUserId);
+  const check = await requireAdmin(req);
   if (!check.ok) return res.status(check.status).json(check.body);
 
   const client = await pool.connect();

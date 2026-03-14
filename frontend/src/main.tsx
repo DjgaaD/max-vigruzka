@@ -255,7 +255,14 @@ interface AdminStats {
   ratings_total: number;
 }
 
-const AdminPanel: React.FC<{ backendUser: BackendUser; onError: (s: string | null) => void }> = ({ backendUser, onError }) => {
+type AdminAuth = { type: 'max'; backendUser: BackendUser } | { type: 'token'; token: string };
+
+function adminAuthConfig(auth: AdminAuth): { params?: { admin_user_id: number }; headers?: { Authorization: string } } {
+  if (auth.type === 'max') return { params: { admin_user_id: auth.backendUser.id } };
+  return { headers: { Authorization: `Bearer ${auth.token}` } };
+}
+
+const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => void }> = ({ auth, onError }) => {
   const [users, setUsers] = React.useState<AdminUser[]>([]);
   const [stats, setStats] = React.useState<AdminStats | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -264,25 +271,25 @@ const AdminPanel: React.FC<{ backendUser: BackendUser; onError: (s: string | nul
   const [blockModal, setBlockModal] = React.useState<{ userId: number; blocked: boolean; reason: string; until: string } | null>(null);
   const [blockSending, setBlockSending] = React.useState(false);
 
-  const adminId = backendUser.id;
+  const authConfig = React.useMemo(() => adminAuthConfig(auth), [auth.type, auth.type === 'max' ? auth.backendUser.id : auth.token]);
 
   const loadUsers = React.useCallback(async () => {
     try {
-      const res = await axios.get<{ users: AdminUser[] }>(`${API_BASE}/admin/users`, { params: { admin_user_id: adminId } });
+      const res = await axios.get<{ users: AdminUser[] }>(`${API_BASE}/admin/users`, authConfig);
       setUsers(res.data.users);
-    } catch (e: unknown) {
+    } catch {
       onError('Не удалось загрузить список пользователей.');
     }
-  }, [adminId, onError]);
+  }, [authConfig, onError]);
 
   const loadStats = React.useCallback(async () => {
     try {
-      const res = await axios.get<AdminStats>(`${API_BASE}/admin/stats`, { params: { admin_user_id: adminId } });
+      const res = await axios.get<AdminStats>(`${API_BASE}/admin/stats`, authConfig);
       setStats(res.data);
     } catch {
       onError('Не удалось загрузить статистику.');
     }
-  }, [adminId, onError]);
+  }, [authConfig, onError]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -298,7 +305,7 @@ const AdminPanel: React.FC<{ backendUser: BackendUser; onError: (s: string | nul
     try {
       const res = await axios.get<{ user: AdminUser; auctions: Auction[]; bids: unknown[] }>(
         `${API_BASE}/admin/users/${id}`,
-        { params: { admin_user_id: adminId } }
+        authConfig
       );
       setDetailId(id);
       setDetail(res.data);
@@ -314,7 +321,7 @@ const AdminPanel: React.FC<{ backendUser: BackendUser; onError: (s: string | nul
       await axios.post(
         `${API_BASE}/admin/users/${blockModal.userId}/block`,
         { blocked: blockModal.blocked, reason: blockModal.reason || undefined, until: blockModal.until || undefined },
-        { params: { admin_user_id: adminId } }
+        authConfig
       );
       setBlockModal(null);
       await loadUsers();
@@ -592,7 +599,7 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
         </div>
       )}
       {backendUser && role === 'admin' && (
-        <AdminPanel backendUser={backendUser} onError={setError} />
+        <AdminPanel auth={{ type: 'max', backendUser }} onError={setError} />
       )}
       {backendUser && role && role !== 'admin' && (
         <div style={{ marginTop: 24 }}>
@@ -876,11 +883,99 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
   );
 };
 
+const ADMIN_TOKEN_KEY = 'admin_token';
+
+const AdminWebEntry: React.FC = () => {
+  const [token, setToken] = React.useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem(ADMIN_TOKEN_KEY);
+  });
+  const [login, setLogin] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await axios.post<{ token: string }>(`${API_BASE}/admin/auth`, { login, password });
+      const t = res.data.token;
+      window.localStorage.setItem(ADMIN_TOKEN_KEY, t);
+      setToken(t);
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { error?: string } } };
+      if (ax.response?.status === 401) setError('Неверный логин или пароль.');
+      else if (ax.response?.data?.error === 'admin_login_not_configured') setError('Вход для администратора не настроен на сервере.');
+      else setError('Ошибка входа.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    window.localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setToken(null);
+  };
+
+  if (!token) {
+    return (
+      <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', maxWidth: 360, margin: '40px auto' }}>
+        <h2 style={{ marginTop: 0 }}>Вход в админ-панель</h2>
+        <p style={{ color: '#666', fontSize: 14 }}>Поиск грузчиков — mintday.ru</p>
+        {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <input
+            type="text"
+            placeholder="Логин"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            required
+            style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
+          />
+          <input
+            type="password"
+            placeholder="Пароль"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
+          />
+          <button type="submit" disabled={loading} style={{ padding: 12, borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>
+            {loading ? 'Вход...' : 'Войти'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button type="button" onClick={handleLogout} style={{ padding: '6px 12px', fontSize: 12, color: '#666' }}>Выйти</button>
+      </div>
+      <AdminPanel auth={{ type: 'token', token }} onError={setError} />
+      {error && <p style={{ color: 'red', marginTop: 16 }}>{error}</p>}
+    </div>
+  );
+};
+
+function isAdminPath(): boolean {
+  if (typeof window === 'undefined') return false;
+  const p = window.location.pathname;
+  return p === '/admin' || p.endsWith('/admin');
+}
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <MaxUI>
-      <App />
-    </MaxUI>
+    {isAdminPath() ? (
+      <AdminWebEntry />
+    ) : (
+      <MaxUI>
+        <App />
+      </MaxUI>
+    )}
   </React.StrictMode>
 );
 
