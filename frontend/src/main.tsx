@@ -60,6 +60,42 @@ function formatDateDisplay(yyyyMmDd: string): string {
   return `${d}.${m}.${y}`;
 }
 
+/** Текущее время, округлённое вверх до следующего получаса, в формате HH:MM */
+function currentTimeSlotHHMM(): string {
+  const d = new Date();
+  const m = d.getMinutes();
+  const roundUp = m > 0 || d.getSeconds() > 0 ? 30 - (m % 30) : 0;
+  const next = new Date(d.getTime() + roundUp * 60 * 1000);
+  return String(next.getHours()).padStart(2, '0') + ':' + String(next.getMinutes()).padStart(2, '0');
+}
+
+/** Список времени (30 мин) для даты: прошедшие слоты отфильтрованы */
+function getTimeOptionsForDate(timeOptions: string[], dateYYYYMMDD: string): string[] {
+  const today = todayYYYYMMDD();
+  if (dateYYYYMMDD < today) return timeOptions;
+  if (dateYYYYMMDD > today) return timeOptions;
+  const minTime = currentTimeSlotHHMM();
+  return timeOptions.filter((t) => t >= minTime);
+}
+
+/** Для времени окончания поиска: если дата поиска = дате работ, показываем только слоты не позже (workTime − 90 мин) */
+function getTimeOptionsForSearchEnd(
+  timeOptions: string[],
+  searchEndDate: string,
+  workDate: string,
+  workTime: string
+): string[] {
+  let opts = getTimeOptionsForDate(timeOptions, searchEndDate);
+  if (searchEndDate !== workDate || !workTime) return opts;
+  const [wh, wm] = workTime.split(':').map(Number);
+  const totalMins = wh * 60 + wm - 90;
+  const maxH = Math.floor(totalMins / 60);
+  const maxM = totalMins % 60;
+  const maxTime = String(maxH).padStart(2, '0') + ':' + (maxM >= 30 ? '30' : '00');
+  if (totalMins < 0) return [];
+  return opts.filter((t) => t <= maxTime);
+}
+
 /** Дни календаря для месяца. minDate — даты раньше неё считаются прошедшими (по умолчанию сегодня). */
 function getCalendarDays(year: number, month: number, minDate?: string) {
   const first = new Date(year, month - 1, 1);
@@ -269,8 +305,13 @@ const App: React.FC = () => {
     }
     const workStart = new Date(`${workDate}T${workTime}:00`).getTime();
     const searchEnd = new Date(`${auctionEndDate}T${auctionEndTime}:00`).getTime();
-    if (searchEnd <= workStart) {
-      setError('Дата и время окончания поиска должны быть позже даты и времени начала работ.');
+    if (searchEnd >= workStart) {
+      setError('Окончание поиска должно быть раньше начала работ.');
+      return;
+    }
+    const diffMinutes = (workStart - searchEnd) / (60 * 1000);
+    if (diffMinutes < 90) {
+      setError('Между окончанием поиска и началом работ должно быть не менее 90 минут (время на дорогу грузчику).');
       return;
     }
     const dateTimeISO = new Date(`${workDate}T${workTime}:00`).toISOString();
@@ -399,11 +440,12 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                 </div>
               )}
             </div>
+            {workDate && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label style={{ fontSize: 12, color: '#555' }}>Время начала работ (кратно 30 мин)</label>
               <button
                 type="button"
-                onClick={() => { setTimePicker('work'); setTempTime(workTime || ''); }}
+                onClick={() => { setTimePicker('work'); const allowed = getTimeOptionsForDate(timeOptions, workDate); setTempTime(allowed.includes(workTime) ? workTime : (allowed[0] ?? '')); }}
                 style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc', textAlign: 'left', background: '#fff' }}
               >
                 {workTime || 'Выберите время'}
@@ -411,26 +453,30 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               {timePicker === 'work' && (
                 <div style={{ marginTop: 4, padding: 12, border: '1px solid #ccc', borderRadius: 12, background: '#f9f9f9', maxHeight: 280, overflow: 'auto' }}>
                   <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
-                    {timeOptions.map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setTempTime(t)}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          padding: 10,
-                          textAlign: 'center',
-                          border: tempTime === t ? '2px solid #1976d2' : '1px solid #eee',
-                          borderRadius: 8,
-                          background: tempTime === t ? '#e3f2fd' : '#fff',
-                          marginBottom: 4,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                    {getTimeOptionsForDate(timeOptions, workDate).length === 0 ? (
+                      <p style={{ fontSize: 12, color: '#666' }}>На эту дату нет доступного времени</p>
+                    ) : (
+                      getTimeOptionsForDate(timeOptions, workDate).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTempTime(t)}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            padding: 10,
+                            textAlign: 'center',
+                            border: tempTime === t ? '2px solid #1976d2' : '1px solid #eee',
+                            borderRadius: 8,
+                            background: tempTime === t ? '#e3f2fd' : '#fff',
+                            marginBottom: 4,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button type="button" onClick={() => setTimePicker(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc' }}>Отмена</button>
@@ -439,6 +485,8 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                 </div>
               )}
             </div>
+            )}
+            {workTime && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label style={{ fontSize: 12, color: '#555' }}>Дата окончания поиска</label>
               <button
@@ -462,7 +510,7 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 12 }}>
                     {['Вс','Пн','Вт','Ср','Чт','Пт','Сб'].map((w) => <div key={w} style={{ textAlign: 'center', fontSize: 11, color: '#666' }}>{w}</div>)}
-                    {getCalendarDays(calendarMonth.year, calendarMonth.month, workDate || todayYYYYMMDD()).map((cell) => (
+                    {getCalendarDays(calendarMonth.year, calendarMonth.month, todayYYYYMMDD()).map((cell) => (
                       <button
                         key={cell.date}
                         type="button"
@@ -488,11 +536,17 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                 </div>
               )}
             </div>
+            )}
+            {auctionEndDate && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label style={{ fontSize: 12, color: '#555' }}>Время окончания поиска (кратно 30 мин)</label>
               <button
                 type="button"
-                onClick={() => { setTimePicker('auction'); setTempTime(auctionEndTime || ''); }}
+                onClick={() => {
+                  setTimePicker('auction');
+                  const allowed = getTimeOptionsForSearchEnd(timeOptions, auctionEndDate, workDate, workTime);
+                  setTempTime(allowed.includes(auctionEndTime) ? auctionEndTime : (allowed[0] ?? ''));
+                }}
                 style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc', textAlign: 'left', background: '#fff' }}
               >
                 {auctionEndTime || 'Выберите время'}
@@ -500,26 +554,30 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               {timePicker === 'auction' && (
                 <div style={{ marginTop: 4, padding: 12, border: '1px solid #ccc', borderRadius: 12, background: '#f9f9f9', maxHeight: 280, overflow: 'auto' }}>
                   <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
-                    {timeOptions.map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setTempTime(t)}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          padding: 10,
-                          textAlign: 'center',
-                          border: tempTime === t ? '2px solid #1976d2' : '1px solid #eee',
-                          borderRadius: 8,
-                          background: tempTime === t ? '#e3f2fd' : '#fff',
-                          marginBottom: 4,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                    {getTimeOptionsForSearchEnd(timeOptions, auctionEndDate, workDate, workTime).length === 0 ? (
+                      <p style={{ fontSize: 12, color: '#666' }}>Нет доступного времени (нужно не менее 90 мин до начала работ)</p>
+                    ) : (
+                      getTimeOptionsForSearchEnd(timeOptions, auctionEndDate, workDate, workTime).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTempTime(t)}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            padding: 10,
+                            textAlign: 'center',
+                            border: tempTime === t ? '2px solid #1976d2' : '1px solid #eee',
+                            borderRadius: 8,
+                            background: tempTime === t ? '#e3f2fd' : '#fff',
+                            marginBottom: 4,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button type="button" onClick={() => setTimePicker(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ccc' }}>Отмена</button>
@@ -528,6 +586,7 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                 </div>
               )}
             </div>
+            )}
             <Button disabled={loading} onClick={handleCreateAuction}>
               Разместить заявку
             </Button>
