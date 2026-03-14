@@ -196,6 +196,19 @@ const App: React.FC = () => {
         </p>
       )}
       {error && <p style={{ color: 'red', marginTop: 8 }}>{error}</p>}
+      {!webAppUser && (
+        <div style={{ marginTop: 12, padding: 8, background: '#f5f5f5', fontSize: 11, wordBreak: 'break-all' }}>
+          <strong>Отладка (что пришло от MAX):</strong>
+          <pre style={{ margin: '4px 0', whiteSpace: 'pre-wrap' }}>
+            {`href: ${typeof location !== 'undefined' ? location.href : 'n/a'}
+WebApp: ${window.WebApp ? 'yes' : 'no'}
+initData: ${window.WebApp?.initData ? String(window.WebApp.initData).slice(0, 400) + (window.WebApp.initData.length > 400 ? '...' : '') : 'empty'}
+initDataUnsafe: ${JSON.stringify(window.WebApp?.initDataUnsafe ?? null)}
+search: ${typeof location !== 'undefined' ? location.search : 'n/a'}
+hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
+          </pre>
+        </div>
+      )}
       {!backendUser && (
         <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Button disabled={loading} onClick={() => handleAuth('customer')}>
