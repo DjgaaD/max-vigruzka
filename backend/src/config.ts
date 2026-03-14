@@ -1,8 +1,12 @@
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 
-// Загружаем .env из папки backend (при запуске из любой директории)
-dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+const envPath1 = path.resolve(__dirname, '..', '.env');
+const envPath2 = path.resolve(process.cwd(), '.env');
+if (fs.existsSync(envPath1)) dotenv.config({ path: envPath1 });
+else if (fs.existsSync(envPath2)) dotenv.config({ path: envPath2 });
+else dotenv.config();
 
 const adminIdsRaw = process.env.ADMIN_MAX_USER_IDS || '';
 export const config = {

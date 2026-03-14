@@ -218,6 +218,10 @@ app.get('/auctions/my', async (req, res) => {
 });
 
 // --- Вход в админку по логину/паролю (для браузера с сайта) ---
+app.get('/admin/auth/status', (_req, res) => {
+  res.json({ configured: !!(config.adminLogin && config.adminPassword) });
+});
+
 app.post('/admin/auth', (req, res) => {
   const login = typeof req.body?.login === 'string' ? req.body.login.trim() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password.trim() : '';

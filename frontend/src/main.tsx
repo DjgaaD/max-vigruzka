@@ -894,6 +894,11 @@ const AdminWebEntry: React.FC = () => {
   const [password, setPassword] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [serverConfigured, setServerConfigured] = React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    axios.get<{ configured: boolean }>(`${API_BASE}/admin/auth/status`).then((r) => setServerConfigured(r.data.configured)).catch(() => setServerConfigured(false));
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -905,10 +910,11 @@ const AdminWebEntry: React.FC = () => {
       window.localStorage.setItem(ADMIN_TOKEN_KEY, t);
       setToken(t);
     } catch (err: unknown) {
-      const ax = err as { response?: { status?: number; data?: { error?: string } } };
+      const ax = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
       if (ax.response?.status === 401) setError('Неверный логин или пароль.');
-      else if (ax.response?.data?.error === 'admin_login_not_configured') setError('Вход для администратора не настроен на сервере.');
-      else setError('Ошибка входа.');
+      else if (ax.response?.data?.error === 'admin_login_not_configured') setError('На сервере не заданы ADMIN_LOGIN и ADMIN_PASSWORD. Добавьте их в .env на сервере и перезапустите бэкенд.');
+      else if (!ax.response) setError('Не удалось подключиться к серверу. Проверьте, что открыт сайт с того же домена (mintday.ru), где работает API.');
+      else setError('Ошибка входа. Код: ' + (ax.response?.status || '') + '.');
     } finally {
       setLoading(false);
     }
@@ -924,6 +930,11 @@ const AdminWebEntry: React.FC = () => {
       <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', maxWidth: 360, margin: '40px auto' }}>
         <h2 style={{ marginTop: 0 }}>Вход в админ-панель</h2>
         <p style={{ color: '#666', fontSize: 14 }}>Поиск грузчиков — mintday.ru</p>
+        {serverConfigured === false && (
+          <p style={{ color: '#c00', marginBottom: 16, fontSize: 13 }}>
+            Сервер не настроен: на бэкенде не заданы ADMIN_LOGIN и ADMIN_PASSWORD (файл .env на сервере или переменные окружения). Запрос к API может не доходить до сервера.
+          </p>
+        )}
         {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <input
