@@ -45,33 +45,58 @@ const API_BASE = '/api';
 
 type MaxUser = { id: number; first_name?: string; last_name?: string; username?: string };
 
-/** Достаём user из строки initData (MAX передаёт URL-encoded: auth_date=...&user=...&hash=...) */
-function parseUserFromInitData(initData: string | undefined): MaxUser | null {
-  if (!initData || typeof initData !== 'string') return null;
-  try {
-    const params = new URLSearchParams(initData);
-    let userStr = params.get('user');
-    if (!userStr) return null;
-    for (let i = 0; i < 2; i++) {
-      try {
-        const decoded = decodeURIComponent(userStr);
-        const obj = JSON.parse(decoded) as { id?: number; first_name?: string; last_name?: string; username?: string };
-        if (obj && typeof obj.id === 'number') {
-          return {
-            id: obj.id,
-            first_name: obj.first_name,
-            last_name: obj.last_name,
-            username: obj.username
-          };
-        }
-      } catch {
-        // может быть двойной encoding
+/** Разбираем user из строки вида initData/WebAppData:
+ *  - сама строка может быть закодирована (WebAppData=chat%3D...&user%3D...)
+ *  - внутри user лежит JSON, который может быть закодирован 1–2 раза
+ */
+function parseUserFromInitLike(initLike: string | undefined): MaxUser | null {
+  if (!initLike || typeof initLike !== 'string') return null;
+
+  let current = initLike;
+  for (let step = 0; step < 3; step++) {
+    try {
+      const params = new URLSearchParams(current);
+      let userStr = params.get('user');
+      if (!userStr) {
+        // если нет user, попробуем дальше декодировать всю строку
+        throw new Error('no user param');
       }
-      userStr = decodeURIComponent(userStr);
+
+      for (let i = 0; i < 3; i++) {
+        try {
+          const obj = JSON.parse(userStr) as { id?: number; first_name?: string; last_name?: string; username?: string };
+          if (obj && typeof obj.id === 'number') {
+            return {
+              id: obj.id,
+              first_name: obj.first_name,
+              last_name: obj.last_name,
+              username: obj.username
+            };
+          }
+        } catch {
+          // возможно, userStr всё ещё закодирован
+        }
+        try {
+          const decodedUser = decodeURIComponent(userStr);
+          if (decodedUser === userStr) break;
+          userStr = decodedUser;
+        } catch {
+          break;
+        }
+      }
+    } catch {
+      // попробуем раскодировать всю строку ещё раз и повторить попытку
     }
-  } catch {
-    // ignore
+
+    try {
+      const decodedWhole = decodeURIComponent(current);
+      if (decodedWhole === current) break;
+      current = decodedWhole;
+    } catch {
+      break;
+    }
   }
+
   return null;
 }
 
@@ -79,17 +104,30 @@ function getMaxUser(): MaxUser | null {
   const w = window.WebApp;
   const fromUnsafe = w?.initDataUnsafe?.user ?? null;
   if (fromUnsafe) return fromUnsafe;
-  const fromInitData = parseUserFromInitData(w?.initData);
+  const fromInitData = parseUserFromInitLike(w?.initData);
   if (fromInitData) return fromInitData;
   if (typeof location !== 'undefined') {
     const qs = location.search.startsWith('?') ? location.search.slice(1) : location.search;
     const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
-    const fromQs = new URLSearchParams(qs).get('initData') || new URLSearchParams(hash).get('initData');
-    if (fromQs) {
-      const u = parseUserFromInitData(fromQs);
+    const spQs = new URLSearchParams(qs);
+    const spHash = new URLSearchParams(hash);
+
+    // Вариант 1: initData в query/hash
+    const initDataParam = spQs.get('initData') || spHash.get('initData');
+    if (initDataParam) {
+      const u = parseUserFromInitLike(initDataParam);
       if (u) return u;
     }
-    const u2 = parseUserFromInitData(qs || hash);
+
+    // Вариант 2: MAX присылает всё в WebAppData (как в твоём href)
+    const webAppDataParam = spQs.get('WebAppData') || spHash.get('WebAppData');
+    if (webAppDataParam) {
+      const u = parseUserFromInitLike(webAppDataParam);
+      if (u) return u;
+    }
+
+    // Вариант 3: вся строка целиком похожа на initData/WebAppData
+    const u2 = parseUserFromInitLike(qs || hash);
     if (u2) return u2;
   }
   return null;
