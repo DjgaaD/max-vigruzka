@@ -1,0 +1,8 @@
+# Build
+frontend/dist/
+node_modules/
+
+# Env / local
+.env
+.env.local
+*.log

@@ -76,10 +76,12 @@ if errorlevel 1 (
     exit /b 1
 )
 cd ..
-
+echo Локальная сборка OK.
 echo.
+
 echo [6/6] Обновление на сервере и выкладка фронта...
 echo Внимание: git reset --hard на сервере сотрёт локальные правки на VPS.
+echo Не закрывайте окно — сейчас подключение к серверу и сборка на VPS.
 echo.
 
 set "SSH_KEY=%USERPROFILE%\.ssh\id_ed25519_maxvigruzka"
