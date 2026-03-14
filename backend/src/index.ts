@@ -219,7 +219,8 @@ app.get('/auctions/my', async (req, res) => {
 
 // --- Вход в админку по логину/паролю (для браузера с сайта) ---
 app.post('/admin/auth', (req, res) => {
-  const { login, password } = req.body as { login?: string; password?: string };
+  const login = typeof req.body?.login === 'string' ? req.body.login.trim() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password.trim() : '';
   if (!config.adminLogin || !config.adminPassword) {
     return res.status(503).json({ error: 'admin_login_not_configured' });
   }

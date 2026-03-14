@@ -1,6 +1,8 @@
+import path from 'path';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Загружаем .env из папки backend (при запуске из любой директории)
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 const adminIdsRaw = process.env.ADMIN_MAX_USER_IDS || '';
 export const config = {
