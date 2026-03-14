@@ -41,7 +41,7 @@ interface Auction {
   status: string;
 }
 
-const API_BASE = 'http://localhost:4000';
+const API_BASE = 'http://178.255.127.75:4000';
 
 const App: React.FC = () => {
   const webAppUser = window.WebApp?.initDataUnsafe?.user;
@@ -61,6 +61,11 @@ const App: React.FC = () => {
   }, []);
 
   const handleAuth = async (selectedRole: Role) => {
+    if (!webAppUser) {
+      setError('Нет данных пользователя из MAX. Откройте миниприложение из MAX.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -138,7 +143,7 @@ const App: React.FC = () => {
           <Button disabled={loading} onClick={() => handleAuth('customer')}>
             Я заказчик
           </Button>
-          <Button appearance="secondary" disabled={loading} onClick={() => handleAuth('loader')}>
+          <Button disabled={loading} onClick={() => handleAuth('loader')}>
             Я грузчик
           </Button>
         </div>
