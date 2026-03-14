@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const adminIdsRaw = process.env.ADMIN_MAX_USER_IDS || '';
 export const config = {
   port: Number(process.env.PORT) || 4000,
   db: {
@@ -11,7 +12,8 @@ export const config = {
     password: process.env.DB_PASSWORD || 'postgres',
     database: process.env.DB_NAME || 'max_vigruzka'
   },
-  maxBotToken: process.env.MAX_BOT_TOKEN || ''
+  maxBotToken: process.env.MAX_BOT_TOKEN || '',
+  adminMaxUserIds: adminIdsRaw ? adminIdsRaw.split(',').map((s) => Number(s.trim())).filter(Boolean) : [] as number[]
 };
 
 if (!config.maxBotToken) {

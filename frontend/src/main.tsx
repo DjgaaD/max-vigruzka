@@ -21,7 +21,7 @@ declare global {
   }
 }
 
-type Role = 'customer' | 'loader';
+type Role = 'customer' | 'loader' | 'admin';
 
 interface BackendUser {
   id: number;
@@ -227,6 +227,202 @@ function getMaxUser(): MaxUser | null {
   return null;
 }
 
+interface AdminUser {
+  id: number;
+  max_user_id: number;
+  role: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  rating_avg?: number | null;
+  rating_count?: number;
+  created_at?: string;
+  is_blocked?: boolean;
+  block_reason?: string | null;
+  block_until?: string | null;
+  auctions_count?: number;
+  bids_count?: number;
+  active_orders_count?: number;
+}
+
+interface AdminStats {
+  users_total: number;
+  customers_count: number;
+  loaders_count: number;
+  auctions_total: number;
+  auctions_active: number;
+  bids_total: number;
+  ratings_total: number;
+}
+
+const AdminPanel: React.FC<{ backendUser: BackendUser; onError: (s: string | null) => void }> = ({ backendUser, onError }) => {
+  const [users, setUsers] = React.useState<AdminUser[]>([]);
+  const [stats, setStats] = React.useState<AdminStats | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [detailId, setDetailId] = React.useState<number | null>(null);
+  const [detail, setDetail] = React.useState<{ user: AdminUser; auctions: Auction[]; bids: unknown[] } | null>(null);
+  const [blockModal, setBlockModal] = React.useState<{ userId: number; blocked: boolean; reason: string; until: string } | null>(null);
+  const [blockSending, setBlockSending] = React.useState(false);
+
+  const adminId = backendUser.id;
+
+  const loadUsers = React.useCallback(async () => {
+    try {
+      const res = await axios.get<{ users: AdminUser[] }>(`${API_BASE}/admin/users`, { params: { admin_user_id: adminId } });
+      setUsers(res.data.users);
+    } catch (e: unknown) {
+      onError('Не удалось загрузить список пользователей.');
+    }
+  }, [adminId, onError]);
+
+  const loadStats = React.useCallback(async () => {
+    try {
+      const res = await axios.get<AdminStats>(`${API_BASE}/admin/stats`, { params: { admin_user_id: adminId } });
+      setStats(res.data);
+    } catch {
+      onError('Не удалось загрузить статистику.');
+    }
+  }, [adminId, onError]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      await Promise.all([loadUsers(), loadStats()]);
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [loadUsers, loadStats]);
+
+  const openDetail = async (id: number) => {
+    try {
+      const res = await axios.get<{ user: AdminUser; auctions: Auction[]; bids: unknown[] }>(
+        `${API_BASE}/admin/users/${id}`,
+        { params: { admin_user_id: adminId } }
+      );
+      setDetailId(id);
+      setDetail(res.data);
+    } catch {
+      onError('Не удалось загрузить данные пользователя.');
+    }
+  };
+
+  const submitBlock = async () => {
+    if (!blockModal) return;
+    setBlockSending(true);
+    try {
+      await axios.post(
+        `${API_BASE}/admin/users/${blockModal.userId}/block`,
+        { blocked: blockModal.blocked, reason: blockModal.reason || undefined, until: blockModal.until || undefined },
+        { params: { admin_user_id: adminId } }
+      );
+      setBlockModal(null);
+      await loadUsers();
+      if (detailId === blockModal.userId) setDetail(null);
+    } catch {
+      onError('Не удалось изменить блокировку.');
+    } finally {
+      setBlockSending(false);
+    }
+  };
+
+  if (loading) return <p style={{ marginTop: 24 }}>Загрузка...</p>;
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h4 style={{ marginTop: 0 }}>Админ-панель</h4>
+
+      <div style={{ marginBottom: 24, padding: 16, borderRadius: 12, border: '1px solid #e0e0e0', background: '#f0f7ff' }}>
+        <h5 style={{ marginTop: 0, marginBottom: 12 }}>Статистика сервиса</h5>
+        {stats && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, fontSize: 14 }}>
+            <div>Пользователей: <strong>{stats.users_total}</strong></div>
+            <div>Заказчиков: <strong>{stats.customers_count}</strong></div>
+            <div>Грузчиков: <strong>{stats.loaders_count}</strong></div>
+            <div>Заявок всего: <strong>{stats.auctions_total}</strong></div>
+            <div>Заявок активных: <strong>{stats.auctions_active}</strong></div>
+            <div>Ставок всего: <strong>{stats.bids_total}</strong></div>
+            <div>Оценок: <strong>{stats.ratings_total}</strong></div>
+          </div>
+        )}
+      </div>
+
+      <h5 style={{ marginBottom: 8 }}>Пользователи</h5>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #ddd' }}>
+              <th style={{ textAlign: 'left', padding: 8 }}>ID</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Имя</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Роль</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Рейтинг</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Заявок</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Ставок</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Активных</th>
+              <th style={{ textAlign: 'left', padding: 8 }}>Блок</th>
+              <th style={{ textAlign: 'left', padding: 8 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} style={{ borderBottom: '1px solid #eee' }}>
+                <td style={{ padding: 8 }}>{u.id}</td>
+                <td style={{ padding: 8 }}>{u.first_name} {u.last_name}</td>
+                <td style={{ padding: 8 }}>{u.role === 'customer' ? 'Заказчик' : 'Грузчик'}</td>
+                <td style={{ padding: 8 }}>{u.rating_avg != null ? `★ ${u.rating_avg}` : '—'}</td>
+                <td style={{ padding: 8 }}>{u.auctions_count ?? 0}</td>
+                <td style={{ padding: 8 }}>{u.bids_count ?? 0}</td>
+                <td style={{ padding: 8 }}>{u.active_orders_count ?? 0}</td>
+                <td style={{ padding: 8 }}>{u.is_blocked ? 'Да' + (u.block_until ? ` до ${formatCreatedAt(u.block_until)}` : '') : 'Нет'}</td>
+                <td style={{ padding: 8 }}>
+                  <button type="button" onClick={() => openDetail(u.id)} style={{ marginRight: 8, padding: '4px 8px', fontSize: 11 }}>Подробнее</button>
+                  <button type="button" onClick={() => setBlockModal({ userId: u.id, blocked: !u.is_blocked, reason: u.block_reason || '', until: u.block_until ? u.block_until.slice(0, 16) : '' })} style={{ padding: '4px 8px', fontSize: 11 }}>{u.is_blocked ? 'Разблокировать' : 'Блок'}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {detail && (
+        <div style={{ marginTop: 24, padding: 16, border: '1px solid #ddd', borderRadius: 12, background: '#fafafa' }}>
+          <h5>Пользователь: {detail.user.first_name} {detail.user.last_name} (ID {detail.user.id})</h5>
+          <p style={{ fontSize: 12, color: '#666' }}>Заявок: {detail.auctions.length}</p>
+          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+            {detail.auctions.map((a) => (
+              <div key={a.id} style={{ padding: 8, marginBottom: 4, background: '#fff', borderRadius: 8, fontSize: 12 }}>
+                <strong>{a.title}</strong> — {a.status}, {new Date(a.date_time).toLocaleString('ru-RU')}
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: 12, color: '#666', marginTop: 12 }}>Ставок: {(detail.bids as unknown[]).length}</p>
+          <button type="button" onClick={() => { setDetail(null); setDetailId(null); }}>Закрыть</button>
+        </div>
+      )}
+
+      {blockModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
+          <div style={{ background: '#fff', padding: 24, borderRadius: 12, maxWidth: 360, width: '90%' }}>
+            <h5 style={{ marginTop: 0 }}>{blockModal.blocked ? 'Заблокировать пользователя' : 'Разблокировать'}</h5>
+            {blockModal.blocked && (
+              <>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>Причина (необязательно)</label>
+                <input value={blockModal.reason} onChange={(e) => setBlockModal((m) => m ? { ...m, reason: e.target.value } : null)} placeholder="Причина блокировки" style={{ width: '100%', padding: 8, marginBottom: 12, boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>Разблокировать после (оставьте пустым для навсегда)</label>
+                <input type="datetime-local" value={blockModal.until} onChange={(e) => setBlockModal((m) => m ? { ...m, until: e.target.value } : null)} style={{ width: '100%', padding: 8, marginBottom: 12, boxSizing: 'border-box' }} />
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setBlockModal(null)}>Отмена</button>
+              <button type="button" onClick={submitBlock} disabled={blockSending}>{blockModal.blocked ? 'Заблокировать' : 'Разблокировать'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [webAppUser, setWebAppUser] = React.useState<MaxUser | null>(getMaxUser());
   const [role, setRole] = React.useState<Role | null>(null);
@@ -380,14 +576,25 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
       {!backendUser && (
         <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Button disabled={loading} onClick={() => handleAuth('customer')}>
-            Я заказчик тест
+            Я заказчик
           </Button>
           <Button disabled={loading} onClick={() => handleAuth('loader')}>
             Я грузчик
           </Button>
+          <button
+            type="button"
+            onClick={() => handleAuth('admin')}
+            disabled={loading}
+            style={{ padding: 10, borderRadius: 8, border: '1px solid #999', background: '#f5f5f5', color: '#666', fontSize: 13 }}
+          >
+            Вход для администратора
+          </button>
         </div>
       )}
-      {backendUser && role && (
+      {backendUser && role === 'admin' && (
+        <AdminPanel backendUser={backendUser} onError={setError} />
+      )}
+      {backendUser && role && role !== 'admin' && (
         <div style={{ marginTop: 24 }}>
           {/* Личный кабинет */}
           <div style={{ padding: 16, borderRadius: 12, border: '1px solid #e0e0e0', background: '#fafafa', marginBottom: 24 }}>

@@ -65,5 +65,8 @@ export async function initDb() {
       created_at timestamptz default now()
     );
   `);
+  await pool.query(`
+    alter table users add column if not exists block_until timestamptz;
+  `).catch(() => { /* column may already exist in older PG */ });
 }
 
