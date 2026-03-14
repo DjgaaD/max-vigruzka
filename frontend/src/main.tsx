@@ -30,6 +30,9 @@ interface BackendUser {
   first_name?: string;
   last_name?: string;
   username?: string;
+  rating_avg?: number | null;
+  rating_count?: number;
+  created_at?: string;
 }
 
 interface Auction {
@@ -58,6 +61,15 @@ function formatDateDisplay(yyyyMmDd: string): string {
   if (!yyyyMmDd) return '';
   const [y, m, d] = yyyyMmDd.split('-');
   return `${d}.${m}.${y}`;
+}
+
+function formatCreatedAt(iso: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}.${month}.${year}`;
 }
 
 /** Текущее время, округлённое вверх до следующего получаса, в формате HH:MM */
@@ -375,8 +387,61 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
           </Button>
         </div>
       )}
-      {backendUser && role === 'customer' && (
+      {backendUser && role && (
         <div style={{ marginTop: 24 }}>
+          {/* Личный кабинет */}
+          <div style={{ padding: 16, borderRadius: 12, border: '1px solid #e0e0e0', background: '#fafafa', marginBottom: 24 }}>
+            <h4 style={{ marginTop: 0, marginBottom: 12 }}>Личный кабинет</h4>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <span style={{ fontWeight: 600, fontSize: 16 }}>
+                {backendUser.first_name} {backendUser.last_name}
+              </span>
+              <span style={{ fontSize: 12, color: '#666' }}>
+                {role === 'customer' ? 'Заказчик' : 'Грузчик'}
+              </span>
+              {backendUser.rating_avg != null ? (
+                <span style={{ fontSize: 13 }}>
+                  ★ {backendUser.rating_avg} {backendUser.rating_count != null && backendUser.rating_count > 0 && `(${backendUser.rating_count} оценок)`}
+                </span>
+              ) : (
+                <span style={{ fontSize: 12, color: '#888' }}>Пока нет оценок</span>
+              )}
+              {backendUser.created_at && (
+                <span style={{ fontSize: 11, color: '#888' }}>На сервисе с {formatCreatedAt(backendUser.created_at)}</span>
+              )}
+            </div>
+
+            <h5 style={{ marginBottom: 8, fontSize: 14 }}>Активные заказы</h5>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+              {role === 'customer' && myAuctions.filter((a) => ['active', 'paid'].includes(a.status)).length === 0 && (
+                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>Нет активных заявок</p>
+              )}
+              {role === 'customer' && myAuctions.filter((a) => ['active', 'paid'].includes(a.status)).map((a) => (
+                <div key={a.id} style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd', background: '#fff' }}>
+                  <strong>{a.title}</strong>
+                  <div style={{ fontSize: 12, color: '#666' }}>статус: {a.status}, работы: {new Date(a.date_time).toLocaleString('ru-RU')}</div>
+                </div>
+              ))}
+              {role === 'loader' && <p style={{ margin: 0, fontSize: 13, color: '#666' }}>Здесь будут ваши активные заказы</p>}
+            </div>
+
+            <h5 style={{ marginBottom: 8, fontSize: 14 }}>История</h5>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {role === 'customer' && myAuctions.filter((a) => !['active', 'paid'].includes(a.status)).length === 0 && (
+                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>Пока нет завершённых заявок</p>
+              )}
+              {role === 'customer' && myAuctions.filter((a) => !['active', 'paid'].includes(a.status)).map((a) => (
+                <div key={a.id} style={{ padding: 10, borderRadius: 8, border: '1px solid #eee', background: '#fff' }}>
+                  <strong>{a.title}</strong>
+                  <div style={{ fontSize: 12, color: '#666' }}>статус: {a.status}, работы: {new Date(a.date_time).toLocaleString('ru-RU')}</div>
+                </div>
+              ))}
+              {role === 'loader' && <p style={{ margin: 0, fontSize: 13, color: '#666' }}>Здесь будет история ваших заказов</p>}
+            </div>
+          </div>
+
+          {role === 'customer' && (
+          <>
           <h4>Создать заявку</h4>
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <input
@@ -591,33 +656,14 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               Разместить заявку
             </Button>
           </div>
-
-          <h4 style={{ marginTop: 24 }}>Мои заявки</h4>
-          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {myAuctions.map((a) => (
-              <div
-                key={a.id}
-                style={{
-                  padding: 12,
-                  borderRadius: 8,
-                  border: '1px solid #ddd',
-                  background: '#fafafa'
-                }}
-              >
-                <strong>{a.title}</strong>
-                <div>
-                  статус: {a.status}, работы: {a.date_time}
-                </div>
-              </div>
-            ))}
-            {myAuctions.length === 0 && <p>Пока нет созданных заявок.</p>}
-          </div>
+          </>
+          )}
+          {role === 'loader' && (
+            <p style={{ marginTop: 16, padding: 12, background: '#f5f5f5', borderRadius: 8 }}>
+              <strong>Искать заявки</strong> — раздел в разработке. Здесь будет список заявок и возможность делать ставки.
+            </p>
+          )}
         </div>
-      )}
-      {backendUser && role === 'loader' && (
-        <p style={{ marginTop: 24 }}>
-          Экран грузчика пока не реализован. Здесь будет список заявок и ставки.
-        </p>
       )}
     </div>
   );

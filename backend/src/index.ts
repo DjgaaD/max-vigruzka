@@ -51,8 +51,69 @@ app.post('/auth/max', async (req, res) => {
       );
     }
 
-    const user = userResult.rows[0];
+    const row = userResult.rows[0];
+    const ratingCount = Number(row.rating_count) || 0;
+    const ratingSum = Number(row.rating_sum) || 0;
+    const ratingAvg = ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : null;
+    const user = {
+      id: row.id,
+      max_user_id: row.max_user_id,
+      role: row.role,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      username: row.username,
+      rating_avg: ratingAvg,
+      rating_count: ratingCount,
+      created_at: row.created_at
+    };
     res.json({ user });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Профиль пользователя (рейтинг, блокировка)
+app.get('/users/profile', async (req, res) => {
+  const userId = Number(req.query.user_id);
+  if (!userId) {
+    return res.status(400).json({ error: 'user_id is required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `select id, max_user_id, role, first_name, last_name, username,
+              rating_sum, rating_count, created_at, is_blocked, block_reason
+       from users where id = $1`,
+      [userId]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'user not found' });
+    }
+    const row = result.rows[0];
+    if (row.is_blocked) {
+      return res.status(403).json({ error: 'user_blocked', block_reason: row.block_reason });
+    }
+    const ratingCount = Number(row.rating_count) || 0;
+    const ratingSum = Number(row.rating_sum) || 0;
+    const ratingAvg = ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : null;
+    res.json({
+      user: {
+        id: row.id,
+        max_user_id: row.max_user_id,
+        role: row.role,
+        first_name: row.first_name,
+        last_name: row.last_name,
+        username: row.username,
+        rating_avg: ratingAvg,
+        rating_count: ratingCount,
+        created_at: row.created_at
+      }
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(e);
