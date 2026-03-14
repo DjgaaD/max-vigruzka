@@ -25,7 +25,7 @@ if "%COMMIT_MSG%"=="" (
 )
 
 echo.
-echo [1/6] Статус репозитория...
+echo [1/5] Статус репозитория...
 git status
 if errorlevel 1 (
     echo ОШИБКА: git status
@@ -34,7 +34,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/6] Добавляю изменения...
+echo [2/5] Добавляю изменения...
 git add -A
 if errorlevel 1 (
     echo ОШИБКА: git add
@@ -43,14 +43,14 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/6] Коммит: "%COMMIT_MSG%"
+echo [3/5] Коммит: "%COMMIT_MSG%"
 git commit -m "%COMMIT_MSG%"
 if errorlevel 1 (
     echo INFO: Коммит не создан (нет изменений или ошибка)
 )
 
 echo.
-echo [4/6] Отправляю в репозиторий...
+echo [4/5] Отправляю в репозиторий...
 git push
 if errorlevel 1 (
     echo ОШИБКА: git push
@@ -59,29 +59,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo [5/6] Локальная сборка фронтенда...
-cd frontend
-npm install
-if errorlevel 1 (
-    echo ОШИБКА: npm install
-    cd ..
-    pause
-    exit /b 1
-)
-npm run build
-if errorlevel 1 (
-    echo ОШИБКА: npm run build
-    cd ..
-    pause
-    exit /b 1
-)
-cd ..
-echo Локальная сборка OK.
-echo.
-
-echo [6/6] Обновление на сервере и выкладка фронта...
+echo [5/5] Обновление на сервере: git pull, сборка фронта, выкладка в /var/www...
 echo Внимание: git reset --hard на сервере сотрёт локальные правки на VPS.
-echo Не закрывайте окно — сейчас подключение к серверу и сборка на VPS.
 echo.
 
 set "SSH_KEY=%USERPROFILE%\.ssh\id_ed25519_maxvigruzka"
@@ -94,7 +73,7 @@ if exist "%SSH_KEY%" (
 )
 
 echo.
-echo 6a. Проверка SSH...
+echo 5a. Проверка SSH...
 %SSH_CMD% "echo SSH_OK"
 if errorlevel 1 (
     echo ОШИБКА: не удалось подключиться к серверу. Проверьте ключ и доступ.
@@ -103,7 +82,7 @@ if errorlevel 1 (
 echo SSH подключение OK.
 echo.
 
-echo 6b. На сервере: git fetch + reset origin/master...
+echo 5b. На сервере: git fetch + reset origin/master...
 %SSH_CMD% "cd /opt/max-vigruzka && git fetch origin && git reset --hard origin/master && git log -1 --oneline"
 if errorlevel 1 (
     echo ОШИБКА: git на сервере.
@@ -111,7 +90,7 @@ if errorlevel 1 (
 )
 echo.
 
-echo 6c. На сервере: сборка фронта и копирование в /var/www/max-vigruzka...
+echo 5c. На сервере: сборка фронта и копирование в /var/www/max-vigruzka...
 %SSH_CMD% "cd /opt/max-vigruzka/frontend && chmod +x node_modules/.bin/vite 2>/dev/null; npm install && npm run build && mkdir -p /var/www/max-vigruzka && rm -rf /var/www/max-vigruzka/* && cp -r dist/* /var/www/max-vigruzka/ && echo FILES: && ls -la /var/www/max-vigruzka/ && systemctl reload nginx && echo NGINX reload OK"
 if errorlevel 1 (
     echo ОШИБКА: сборка или копирование на сервере.
