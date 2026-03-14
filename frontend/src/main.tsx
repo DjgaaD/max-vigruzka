@@ -142,9 +142,20 @@ const App: React.FC = () => {
 
   const [title, setTitle] = React.useState('');
   const [description, setDescription] = React.useState('');
-  const [dateTime, setDateTime] = React.useState('');
-  const [auctionEndsAt, setAuctionEndsAt] = React.useState('');
+  const [workDate, setWorkDate] = React.useState('');
+  const [workTime, setWorkTime] = React.useState('');
+  const [auctionEndDate, setAuctionEndDate] = React.useState('');
+  const [auctionEndTime, setAuctionEndTime] = React.useState('');
   const [myAuctions, setMyAuctions] = React.useState<Auction[]>([]);
+
+  const timeOptions = React.useMemo(() => {
+    const opts: string[] = [];
+    for (let h = 0; h < 24; h++) {
+      opts.push(`${String(h).padStart(2, '0')}:00`);
+      opts.push(`${String(h).padStart(2, '0')}:30`);
+    }
+    return opts;
+  }, []);
 
   React.useEffect(() => {
     window.WebApp?.ready();
@@ -197,10 +208,12 @@ const App: React.FC = () => {
 
   const handleCreateAuction = async () => {
     if (!backendUser) return;
-    if (!title || !dateTime || !auctionEndsAt) {
-      setError('Заполните название, дату/время и время окончания аукциона.');
+    if (!title || !workDate || !workTime || !auctionEndDate || !auctionEndTime) {
+      setError('Заполните название, дату и время работ и окончания аукциона.');
       return;
     }
+    const dateTimeISO = new Date(`${workDate}T${workTime}:00`).toISOString();
+    const auctionEndsAtISO = new Date(`${auctionEndDate}T${auctionEndTime}:00`).toISOString();
 
     setLoading(true);
     setError(null);
@@ -210,13 +223,15 @@ const App: React.FC = () => {
         title,
         description,
         cargo_params: null,
-        date_time: dateTime,
-        auction_ends_at: auctionEndsAt
+        date_time: dateTimeISO,
+        auction_ends_at: auctionEndsAtISO
       });
       setTitle('');
       setDescription('');
-      setDateTime('');
-      setAuctionEndsAt('');
+      setWorkDate('');
+      setWorkTime('');
+      setAuctionEndDate('');
+      setAuctionEndTime('');
       await loadMyAuctions(backendUser.id);
     } catch {
       setError('Не удалось создать заявку.');
@@ -274,18 +289,50 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
               style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
             />
-            <input
-              placeholder="Дата и время работ (ISO: 2026-03-15T10:00:00Z)"
-              value={dateTime}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDateTime(e.target.value)}
-              style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
-            />
-            <input
-              placeholder="Окончание аукциона (ISO)"
-              value={auctionEndsAt}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAuctionEndsAt(e.target.value)}
-              style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#555' }}>Дата начала работ</label>
+              <input
+                type="date"
+                value={workDate}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWorkDate(e.target.value)}
+                style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#555' }}>Время начала работ (кратно 30 мин)</label>
+              <select
+                value={workTime}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setWorkTime(e.target.value)}
+                style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc', minHeight: 40 }}
+              >
+                <option value="">Выберите время</option>
+                {timeOptions.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#555' }}>Дата окончания аукциона</label>
+              <input
+                type="date"
+                value={auctionEndDate}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAuctionEndDate(e.target.value)}
+                style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#555' }}>Время окончания аукциона (кратно 30 мин)</label>
+              <select
+                value={auctionEndTime}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAuctionEndTime(e.target.value)}
+                style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc', minHeight: 40 }}
+              >
+                <option value="">Выберите время</option>
+                {timeOptions.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
             <Button disabled={loading} onClick={handleCreateAuction}>
               Разместить заявку
             </Button>
