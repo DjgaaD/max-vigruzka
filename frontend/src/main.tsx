@@ -41,10 +41,11 @@ interface Auction {
   status: string;
 }
 
-const API_BASE = 'http://178.255.127.75:4000';
+const API_BASE = '/api';
 
 const App: React.FC = () => {
-  const webAppUser = window.WebApp?.initDataUnsafe?.user;
+  type MaxUser = { id: number; first_name?: string; last_name?: string; username?: string };
+  const [webAppUser, setWebAppUser] = React.useState<MaxUser | null>(window.WebApp?.initDataUnsafe?.user ?? null);
   const [role, setRole] = React.useState<Role | null>(null);
   const [backendUser, setBackendUser] = React.useState<BackendUser | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -58,10 +59,16 @@ const App: React.FC = () => {
 
   React.useEffect(() => {
     window.WebApp?.ready();
+    const syncUser = () => setWebAppUser(window.WebApp?.initDataUnsafe?.user ?? null);
+    syncUser();
+    const t = setInterval(syncUser, 300);
+    const stop = setTimeout(() => clearInterval(t), 3000);
+    return () => { clearInterval(t); clearTimeout(stop); };
   }, []);
 
   const handleAuth = async (selectedRole: Role) => {
-    if (!webAppUser) {
+    const user = window.WebApp?.initDataUnsafe?.user ?? webAppUser;
+    if (!user) {
       setError('Нет данных пользователя из MAX. Откройте миниприложение из MAX.');
       return;
     }
@@ -70,10 +77,10 @@ const App: React.FC = () => {
     setError(null);
     try {
       const res = await axios.post<{ user: BackendUser }>(`${API_BASE}/auth/max`, {
-        max_user_id: webAppUser.id,
-        first_name: webAppUser.first_name,
-        last_name: webAppUser.last_name,
-        username: webAppUser.username,
+        max_user_id: user.id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        username: user.username,
         role: selectedRole
       });
       setBackendUser(res.data.user);
