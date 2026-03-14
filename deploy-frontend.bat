@@ -82,11 +82,37 @@ echo [6/6] Обновление на сервере и выкладка фрон
 echo Внимание: git reset --hard на сервере сотрёт локальные правки на VPS.
 echo.
 
-ssh root@178.255.127.75 "cd /opt/max-vigruzka && git fetch origin && git reset --hard origin/master && cd frontend && chmod +x node_modules/.bin/vite 2>/dev/null; npm install && npm run build && mkdir -p /var/www/max-vigruzka && rm -rf /var/www/max-vigruzka/* && cp -r dist/* /var/www/max-vigruzka/ && systemctl reload nginx"
+set "SSH_KEY=%USERPROFILE%\.ssh\id_ed25519_maxvigruzka"
+set "SSH_CMD=ssh root@178.255.127.75"
+if exist "%SSH_KEY%" (
+    set "SSH_CMD=ssh -i "%SSH_KEY%" root@178.255.127.75"
+    echo Использую ключ: %SSH_KEY%
+) else (
+    echo Ключ не найден: %SSH_KEY% ^(подключение без -i^)
+)
+
+echo.
+echo 6a. Проверка SSH...
+%SSH_CMD% "echo SSH_OK"
 if errorlevel 1 (
-    echo.
-    echo ВНИМАНИЕ: Команды на сервере завершились с ошибкой.
-    echo Проверьте SSH и логи на VPS.
+    echo ОШИБКА: не удалось подключиться к серверу. Проверьте ключ и доступ.
+    goto :finish
+)
+echo SSH подключение OK.
+echo.
+
+echo 6b. На сервере: git fetch + reset origin/master...
+%SSH_CMD% "cd /opt/max-vigruzka && git fetch origin && git reset --hard origin/master && git log -1 --oneline"
+if errorlevel 1 (
+    echo ОШИБКА: git на сервере.
+    goto :finish
+)
+echo.
+
+echo 6c. На сервере: сборка фронта и копирование в /var/www/max-vigruzka...
+%SSH_CMD% "cd /opt/max-vigruzka/frontend && chmod +x node_modules/.bin/vite 2>/dev/null; npm install && npm run build && mkdir -p /var/www/max-vigruzka && rm -rf /var/www/max-vigruzka/* && cp -r dist/* /var/www/max-vigruzka/ && echo FILES: && ls -la /var/www/max-vigruzka/ && systemctl reload nginx && echo NGINX reload OK"
+if errorlevel 1 (
+    echo ОШИБКА: сборка или копирование на сервере.
     goto :finish
 )
 echo.
