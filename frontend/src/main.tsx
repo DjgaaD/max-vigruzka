@@ -213,7 +213,7 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
       {!backendUser && (
         <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Button disabled={loading} onClick={() => handleAuth('customer')}>
-            Я заказчик
+            Я заказчик тест
           </Button>
           <Button disabled={loading} onClick={() => handleAuth('loader')}>
             Я грузчик
