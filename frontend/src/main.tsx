@@ -43,9 +43,60 @@ interface Auction {
 
 const API_BASE = '/api';
 
+type MaxUser = { id: number; first_name?: string; last_name?: string; username?: string };
+
+/** Достаём user из строки initData (MAX передаёт URL-encoded: auth_date=...&user=...&hash=...) */
+function parseUserFromInitData(initData: string | undefined): MaxUser | null {
+  if (!initData || typeof initData !== 'string') return null;
+  try {
+    const params = new URLSearchParams(initData);
+    let userStr = params.get('user');
+    if (!userStr) return null;
+    for (let i = 0; i < 2; i++) {
+      try {
+        const decoded = decodeURIComponent(userStr);
+        const obj = JSON.parse(decoded) as { id?: number; first_name?: string; last_name?: string; username?: string };
+        if (obj && typeof obj.id === 'number') {
+          return {
+            id: obj.id,
+            first_name: obj.first_name,
+            last_name: obj.last_name,
+            username: obj.username
+          };
+        }
+      } catch {
+        // может быть двойной encoding
+      }
+      userStr = decodeURIComponent(userStr);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function getMaxUser(): MaxUser | null {
+  const w = window.WebApp;
+  const fromUnsafe = w?.initDataUnsafe?.user ?? null;
+  if (fromUnsafe) return fromUnsafe;
+  const fromInitData = parseUserFromInitData(w?.initData);
+  if (fromInitData) return fromInitData;
+  if (typeof location !== 'undefined') {
+    const qs = location.search.startsWith('?') ? location.search.slice(1) : location.search;
+    const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+    const fromQs = new URLSearchParams(qs).get('initData') || new URLSearchParams(hash).get('initData');
+    if (fromQs) {
+      const u = parseUserFromInitData(fromQs);
+      if (u) return u;
+    }
+    const u2 = parseUserFromInitData(qs || hash);
+    if (u2) return u2;
+  }
+  return null;
+}
+
 const App: React.FC = () => {
-  type MaxUser = { id: number; first_name?: string; last_name?: string; username?: string };
-  const [webAppUser, setWebAppUser] = React.useState<MaxUser | null>(window.WebApp?.initDataUnsafe?.user ?? null);
+  const [webAppUser, setWebAppUser] = React.useState<MaxUser | null>(getMaxUser());
   const [role, setRole] = React.useState<Role | null>(null);
   const [backendUser, setBackendUser] = React.useState<BackendUser | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -59,7 +110,7 @@ const App: React.FC = () => {
 
   React.useEffect(() => {
     window.WebApp?.ready();
-    const syncUser = () => setWebAppUser(window.WebApp?.initDataUnsafe?.user ?? null);
+    const syncUser = () => setWebAppUser(getMaxUser());
     syncUser();
     const t = setInterval(syncUser, 300);
     const stop = setTimeout(() => clearInterval(t), 3000);
@@ -67,7 +118,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleAuth = async (selectedRole: Role) => {
-    const user = window.WebApp?.initDataUnsafe?.user ?? webAppUser;
+    const user = getMaxUser() ?? webAppUser;
     if (!user) {
       setError('Нет данных пользователя из MAX. Откройте миниприложение из MAX.');
       return;
