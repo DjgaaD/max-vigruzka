@@ -339,6 +339,39 @@ app.get('/auctions/my', async (req, res) => {
   }
 });
 
+// Удаление заявки заказчиком (можно удалить только свою и только пока она active)
+app.delete('/auctions/:id', async (req, res) => {
+  const auctionId = Number(req.params.id);
+  const { user_id } = req.body as { user_id?: number };
+  if (!auctionId || !user_id) {
+    return res.status(400).json({ error: 'auction id and user_id are required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const auctionRes = await client.query(
+      'select * from auctions where id = $1 and customer_id = $2',
+      [auctionId, user_id]
+    );
+    if (auctionRes.rowCount === 0) {
+      return res.status(404).json({ error: 'auction not found or not owned by user' });
+    }
+    const auction = auctionRes.rows[0];
+    if (auction.status !== 'active') {
+      return res.status(400).json({ error: 'only active auctions can be deleted' });
+    }
+
+    await client.query('delete from auctions where id = $1', [auctionId]);
+    res.json({ ok: true });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
 // Список активных аукционов для грузчиков
 app.get('/auctions/active', async (req, res) => {
   const client = await pool.connect();
@@ -608,6 +641,31 @@ app.get('/admin/stats', async (req, res) => {
       bids_total: Number(bidsTotal.rows[0]?.c) || 0,
       ratings_total: Number(ratingsTotal.rows[0]?.c) || 0
     });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Удаление заявки админом
+app.delete('/admin/auctions/:id', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const auctionId = Number(req.params.id);
+  if (!auctionId) return res.status(400).json({ error: 'auction id required' });
+
+  const client = await pool.connect();
+  try {
+    const exists = await client.query('select id from auctions where id = $1', [auctionId]);
+    if (exists.rowCount === 0) {
+      return res.status(404).json({ error: 'auction not found' });
+    }
+    await client.query('delete from auctions where id = $1', [auctionId]);
+    res.json({ ok: true });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(e);

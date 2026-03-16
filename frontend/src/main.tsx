@@ -406,6 +406,24 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
             {detail.auctions.map((a) => (
               <div key={a.id} style={{ padding: 8, marginBottom: 4, background: '#fff', borderRadius: 8, fontSize: 12 }}>
                 <strong>{a.title}</strong> — {a.status}, {new Date(a.date_time).toLocaleString('ru-RU')}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.confirm('Удалить эту заявку?')) return;
+                    try {
+                      await axios.delete(`${API_BASE}/admin/auctions/${a.id}`, authConfig);
+                      // обновляем детальную информацию и список пользователей
+                      await loadUsers();
+                      setDetail(null);
+                      setDetailId(null);
+                    } catch {
+                      onError('Не удалось удалить заявку.');
+                    }
+                  }}
+                  style={{ marginLeft: 8, padding: '2px 6px', fontSize: 11 }}
+                >
+                  Удалить
+                </button>
               </div>
             ))}
           </div>
@@ -689,6 +707,29 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                 <div key={a.id} style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd', background: '#fff' }}>
                   <strong>{a.title}</strong>
                   <div style={{ fontSize: 12, color: '#666' }}>статус: {a.status}, работы: {new Date(a.date_time).toLocaleString('ru-RU')}</div>
+                  {a.status === 'active' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!backendUser) return;
+                        if (!window.confirm('Удалить эту заявку?')) return;
+                        setLoading(true);
+                        try {
+                          await axios.delete(`${API_BASE}/auctions/${a.id}`, {
+                            data: { user_id: backendUser.id }
+                          });
+                          await loadMyAuctions(backendUser.id);
+                        } catch {
+                          setError('Не удалось удалить заявку.');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      style={{ marginTop: 6, padding: '4px 8px', fontSize: 12 }}
+                    >
+                      Удалить
+                    </button>
+                  )}
                 </div>
               ))}
               {role === 'loader' && <p style={{ margin: 0, fontSize: 13, color: '#666' }}>Здесь будут ваши активные заказы</p>}
