@@ -336,6 +336,13 @@ interface AdminAuctionDetail {
 
 type AdminAuth = { type: 'max'; backendUser: BackendUser } | { type: 'token'; token: string };
 
+interface AdminAuctionSummary extends Auction {
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  bids_count?: number;
+}
+
 function adminAuthConfig(auth: AdminAuth): { params?: { admin_user_id: number }; headers?: { Authorization: string } } {
   if (auth.type === 'max') return { params: { admin_user_id: auth.backendUser.id } };
   return { headers: { Authorization: `Bearer ${auth.token}` } };
@@ -355,6 +362,9 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
   const [broadcastSending, setBroadcastSending] = React.useState(false);
   const [serviceFee, setServiceFee] = React.useState<string>('');
   const [serviceFeeSaving, setServiceFeeSaving] = React.useState(false);
+  const [tab, setTab] = React.useState<'users' | 'active' | 'completed'>('users');
+  const [adminActiveAuctions, setAdminActiveAuctions] = React.useState<AdminAuctionSummary[]>([]);
+  const [adminCompletedAuctions, setAdminCompletedAuctions] = React.useState<AdminAuctionSummary[]>([]);
 
   const authConfig = React.useMemo(() => adminAuthConfig(auth), [auth.type, auth.type === 'max' ? auth.backendUser.id : auth.token]);
 
@@ -379,15 +389,28 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
     }
   }, [authConfig, onError]);
 
+  const loadAdminAuctions = React.useCallback(async () => {
+    try {
+      const [activeRes, completedRes] = await Promise.all([
+        axios.get<{ auctions: AdminAuctionSummary[] }>(`${API_BASE}/admin/auctions/active`, authConfig),
+        axios.get<{ auctions: AdminAuctionSummary[] }>(`${API_BASE}/admin/auctions/completed`, authConfig)
+      ]);
+      setAdminActiveAuctions(activeRes.data.auctions);
+      setAdminCompletedAuctions(completedRes.data.auctions);
+    } catch {
+      onError('Не удалось загрузить список заявок.');
+    }
+  }, [authConfig, onError]);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await Promise.all([loadUsers(), loadStats()]);
+      await Promise.all([loadUsers(), loadStats(), loadAdminAuctions()]);
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [loadUsers, loadStats]);
+  }, [loadUsers, loadStats, loadAdminAuctions]);
 
   const openDetail = async (id: number) => {
     try {
@@ -440,6 +463,7 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
       await axios.post(`${API_BASE}/admin/auctions/${auctionId}/finish`, null, authConfig);
       await loadUsers();
       await refreshDetail();
+      await loadAdminAuctions();
     } catch {
       onError('Не удалось завершить заявку.');
     }
@@ -580,7 +604,32 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
           </div>
         </div>
       </div>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => setTab('users')}
+          style={{ padding: '6px 12px', fontSize: 12, borderRadius: 16, border: '1px solid #ccc', background: tab === 'users' ? '#1890ff' : '#fff', color: tab === 'users' ? '#fff' : '#333' }}
+        >
+          Пользователи
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('active')}
+          style={{ padding: '6px 12px', fontSize: 12, borderRadius: 16, border: '1px solid #ccc', background: tab === 'active' ? '#1890ff' : '#fff', color: tab === 'active' ? '#fff' : '#333' }}
+        >
+          Активные заявки
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('completed')}
+          style={{ padding: '6px 12px', fontSize: 12, borderRadius: 16, border: '1px solid #ccc', background: tab === 'completed' ? '#1890ff' : '#fff', color: tab === 'completed' ? '#fff' : '#333' }}
+        >
+          Завершённые заявки
+        </button>
+      </div>
 
+      {tab === 'users' && (
+      <>
       <h5 style={{ marginBottom: 8 }}>Пользователи</h5>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -726,6 +775,96 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
           <button type="button" onClick={() => setAuctionDetail(null)} style={{ marginTop: 8 }}>
             Закрыть детали заявки
           </button>
+        </div>
+      )}
+      </>
+      )}
+
+      {tab === 'active' && (
+        <div style={{ marginTop: 8 }}>
+          <h5 style={{ marginBottom: 8 }}>Активные заявки</h5>
+          {adminActiveAuctions.length === 0 && <p style={{ fontSize: 13, color: '#666' }}>Нет активных заявок.</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {adminActiveAuctions.map((a) => (
+              <div key={a.id} style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd', background: '#fff' }}>
+                <strong>{a.title}</strong>
+                <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                  Заказчик: {a.first_name} {a.last_name}
+                </div>
+                <div style={{ fontSize: 12, color: '#666' }}>
+                  Работы: {new Date(a.date_time).toLocaleString('ru-RU')} · Торги до: {new Date(a.auction_ends_at).toLocaleString('ru-RU')}
+                </div>
+                <div style={{ fontSize: 12, color: '#666' }}>
+                  Статус: {a.status} · Ставок: {a.bids_count ?? 0}
+                </div>
+                <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => openAuctionDetail(a.id)}
+                    style={{ padding: '4px 8px', fontSize: 11 }}
+                  >
+                    Детали
+                  </button>
+                  {a.status === 'active' && (
+                    <button
+                      type="button"
+                      onClick={() => finishAuction(a.id)}
+                      style={{ padding: '4px 8px', fontSize: 11 }}
+                    >
+                      Завершить
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === 'completed' && (
+        <div style={{ marginTop: 8 }}>
+          <h5 style={{ marginBottom: 8 }}>Завершённые заявки</h5>
+          {adminCompletedAuctions.length === 0 && <p style={{ fontSize: 13, color: '#666' }}>Пока нет завершённых заявок.</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {adminCompletedAuctions.map((a) => (
+              <div key={a.id} style={{ padding: 10, borderRadius: 8, border: '1px solid #eee', background: '#fff' }}>
+                <strong>{a.title}</strong>
+                <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                  Заказчик: {a.first_name} {a.last_name}
+                </div>
+                <div style={{ fontSize: 12, color: '#666' }}>
+                  Работы: {new Date(a.date_time).toLocaleString('ru-RU')}
+                </div>
+                <div style={{ fontSize: 12, color: '#666' }}>
+                  Статус: {a.status} · Ставок: {a.bids_count ?? 0}
+                </div>
+                <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => openAuctionDetail(a.id)}
+                    style={{ padding: '4px 8px', fontSize: 11 }}
+                  >
+                    Детали
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!window.confirm('Удалить эту заявку?')) return;
+                      try {
+                        await axios.delete(`${API_BASE}/admin/auctions/${a.id}`, authConfig);
+                        await loadAdminAuctions();
+                      } catch {
+                        onError('Не удалось удалить заявку.');
+                      }
+                    }}
+                    style={{ padding: '4px 8px', fontSize: 11 }}
+                  >
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

@@ -512,6 +512,56 @@ app.get('/auctions/active', async (req, res) => {
   }
 });
 
+// Список активных заявок для админа
+app.get('/admin/auctions/active', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `select a.*, u.first_name, u.last_name, u.username,
+              (select count(*) from bids where auction_id = a.id) as bids_count
+       from auctions a
+       join users u on a.customer_id = u.id
+       where a.status in ('active','paid')
+       order by a.created_at desc`
+    );
+    res.json({ auctions: result.rows });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Список завершённых заявок для админа
+app.get('/admin/auctions/completed', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `select a.*, u.first_name, u.last_name, u.username,
+              (select count(*) from bids where auction_id = a.id) as bids_count
+       from auctions a
+       join users u on a.customer_id = u.id
+       where a.status in ('finished','completed','cancelled')
+       order by a.created_at desc`
+    );
+    res.json({ auctions: result.rows });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
 // Создание ставки грузчиком
 app.post('/bids', async (req, res) => {
   const { auction_id, loader_id, amount } = req.body as {
