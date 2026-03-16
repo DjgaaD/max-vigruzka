@@ -540,7 +540,15 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
                 onError('Не удалось запустить тестовую рассылку.');
               }
             }}
-            style={{ padding: '6px 12px', fontSize: 12 }}
+            style={{
+              padding: '6px 12px',
+              fontSize: 12,
+              borderRadius: 999,
+              border: '1px solid #4b5563',
+              background: '#111827',
+              color: '#e5e7eb',
+              cursor: 'pointer'
+            }}
           >
             Тестовая рассылка грузчикам
           </button>
@@ -552,7 +560,14 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                   setBroadcastRole(e.target.value === 'customer' ? 'customer' : 'loader')
                 }
-                style={{ padding: 4, borderRadius: 6, border: '1px solid #ccc', fontSize: 12 }}
+                style={{
+                  padding: 6,
+                  borderRadius: 999,
+                  border: '1px solid #4b5563',
+                  fontSize: 12,
+                  background: '#020617',
+                  color: '#e5e7eb'
+                }}
               >
                 <option value="loader">Грузчики</option>
                 <option value="customer">Заказчики</option>
@@ -561,7 +576,16 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
                 type="button"
                 onClick={submitBroadcast}
                 disabled={broadcastSending}
-                style={{ padding: '6px 12px', fontSize: 12 }}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  borderRadius: 999,
+                  border: 'none',
+                  background: '#2563eb',
+                  color: '#f9fafb',
+                  cursor: 'pointer',
+                  opacity: broadcastSending ? 0.7 : 1
+                }}
               >
                 Отправить
               </button>
@@ -571,7 +595,16 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
               onChange={(e) => setBroadcastText(e.target.value)}
               rows={3}
               placeholder="Текст сообщения для рассылки"
-              style={{ width: '100%', padding: 6, borderRadius: 6, border: '1px solid #ccc', fontSize: 12, resize: 'vertical' }}
+              style={{
+                width: '100%',
+                padding: 8,
+                borderRadius: 12,
+                border: '1px solid #4b5563',
+                fontSize: 12,
+                resize: 'vertical',
+                background: '#020617',
+                color: '#e5e7eb'
+              }}
             />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200 }}>
@@ -584,7 +617,16 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
                 step={0.1}
                 value={serviceFee}
                 onChange={(e) => setServiceFee(e.target.value)}
-                style={{ width: 80, padding: 4, borderRadius: 6, border: '1px solid #ccc', fontSize: 12 }}
+                style={{
+                  width: 80,
+                  padding: 6,
+                  borderRadius: 999,
+                  border: '1px solid #4b5563',
+                  fontSize: 12,
+                  background: '#020617',
+                  color: '#e5e7eb',
+                  textAlign: 'center'
+                }}
               />
               <span style={{ fontSize: 12 }}>%</span>
               <button
@@ -606,7 +648,16 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
                     setServiceFeeSaving(false);
                   }
                 }}
-                style={{ padding: '6px 12px', fontSize: 12 }}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  borderRadius: 999,
+                  border: 'none',
+                  background: '#22c55e',
+                  color: '#022c22',
+                  cursor: 'pointer',
+                  opacity: serviceFeeSaving ? 0.7 : 1
+                }}
               >
                 Сохранить
               </button>
