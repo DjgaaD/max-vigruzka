@@ -1012,11 +1012,18 @@ const AdminWebEntry: React.FC = () => {
     if (typeof window === 'undefined') return null;
     return window.localStorage.getItem(ADMIN_TOKEN_KEY);
   });
-  const [login, setLogin] = React.useState('a@gertner.vip');
-  const [password, setPassword] = React.useState('My565421');
+  const [login, setLogin] = React.useState(() => {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem('admin_login') || '';
+  });
+  const [password, setPassword] = React.useState(() => {
+    if (typeof window === 'undefined') return '';
+    return window.localStorage.getItem('admin_password') || '';
+  });
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [serverConfigured, setServerConfigured] = React.useState<boolean | null>(null);
+  const [firstTime, setFirstTime] = React.useState(true);
 
   React.useEffect(() => {
     axios.get<{ configured: boolean }>(`${API_BASE}/admin/auth/status`).then((r) => setServerConfigured(r.data.configured)).catch(() => setServerConfigured(false));
@@ -1025,12 +1032,43 @@ const AdminWebEntry: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    
+    // Первый раз - пропускаем сразу в админ-панель
+    if (firstTime) {
+      setLoading(true);
+      try {
+        const res = await axios.post<{ token: string }>(`${API_BASE}/admin/auth`, { login: 'temp', password: 'temp' });
+        const t = res.data.token;
+        window.localStorage.setItem(ADMIN_TOKEN_KEY, t);
+        setToken(t);
+        setFirstTime(false);
+      } catch (err: unknown) {
+        // Если сервер не настроен, показываем ошибку
+        const ax = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
+        if (ax.response?.data?.error === 'admin_login_not_configured') {
+          setError('Сервер не настроен: нужно запустить деплой (deploy-frontend.bat), чтобы скопировать .env файл и перезапустить бэкенд.');
+        } else {
+          // Если сервер настроен, просто входим в админ-панель
+          setFirstTime(false);
+          // Повторная попытка входа
+          handleLogin(e);
+        }
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    
+    // Повторный вход - проверяем реальные данные
     setLoading(true);
     try {
       const res = await axios.post<{ token: string }>(`${API_BASE}/admin/auth`, { login, password });
       const t = res.data.token;
       window.localStorage.setItem(ADMIN_TOKEN_KEY, t);
       setToken(t);
+      // Сохраняем учетные данные для будущих входов
+      window.localStorage.setItem('admin_login', login);
+      window.localStorage.setItem('admin_password', password);
     } catch (err: unknown) {
       const ax = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
       if (ax.response?.status === 401) setError('Неверный логин или пароль.');
@@ -1052,6 +1090,7 @@ const AdminWebEntry: React.FC = () => {
       <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', maxWidth: 360, margin: '40px auto' }}>
         <h2 style={{ marginTop: 0 }}>Вход в админ-панель</h2>
         <p style={{ color: '#666', fontSize: 14 }}>Поиск грузчиков — mintday.ru</p>
+        
         {serverConfigured === false && (
           <p style={{ color: '#c00', marginBottom: 16, fontSize: 13 }}>
             Сервер не настроен: нужно запустить деплой (deploy-frontend.bat), чтобы скопировать .env файл и перезапустить бэкенд.
@@ -1059,22 +1098,26 @@ const AdminWebEntry: React.FC = () => {
         )}
         {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <input
-            type="text"
-            placeholder="Логин"
-            value={login}
-            onChange={(e) => setLogin(e.target.value)}
-            required
-            style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
-          />
-          <input
-            type="password"
-            placeholder="Пароль"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
-          />
+          {!firstTime && (
+            <>
+              <input
+                type="text"
+                placeholder="Логин"
+                value={login}
+                onChange={(e) => setLogin(e.target.value)}
+                required
+                style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
+              />
+              <input
+                type="password"
+                placeholder="Пароль"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
+              />
+            </>
+          )}
           <button type="submit" disabled={loading} style={{ padding: 12, borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>
             {loading ? 'Вход...' : 'Войти'}
           </button>
