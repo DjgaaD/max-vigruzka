@@ -501,11 +501,19 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
 
   if (loading) return <p style={{ marginTop: 24 }}>Загрузка...</p>;
 
-  return (
-    <div style={{ marginTop: 24 }}>
-      <h4 style={{ marginTop: 0 }}>Админ-панель</h4>
+  const isDark = true; // включаем тёмную тему для админки
+  const bgMain = isDark ? '#0f172a' : '#fff';
+  const textMain = isDark ? '#e5e7eb' : '#000';
+  const cardBg = isDark ? '#1f2937' : '#f0f7ff';
+  const borderColor = isDark ? '#374151' : '#e0e0e0';
+  const tableHeaderBg = isDark ? '#111827' : undefined;
+  const tableHeaderText = isDark ? '#e5e7eb' : undefined;
 
-      <div style={{ marginBottom: 24, padding: 16, borderRadius: 12, border: '1px solid #e0e0e0', background: '#f0f7ff' }}>
+  return (
+    <div style={{ marginTop: 24, background: bgMain, color: textMain, padding: 16, borderRadius: 16 }}>
+      <h4 style={{ marginTop: 0, marginBottom: 8 }}>Админ-панель</h4>
+
+      <div style={{ marginBottom: 24, padding: 16, borderRadius: 12, border: `1px solid ${borderColor}`, background: cardBg }}>
         <h5 style={{ marginTop: 0, marginBottom: 12 }}>Статистика сервиса</h5>
         {stats && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, fontSize: 14 }}>
@@ -535,7 +543,7 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
             Тестовая рассылка грузчикам
           </button>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 260 }}>
-            <div style={{ fontSize: 12, color: '#555' }}>Массовая рассылка</div>
+            <div style={{ fontSize: 12, color: isDark ? '#d1d5db' : '#555' }}>Массовая рассылка</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <select
                 value={broadcastRole}
@@ -565,7 +573,7 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
             />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200 }}>
-            <div style={{ fontSize: 12, color: '#555' }}>Процент сервиса</div>
+            <div style={{ fontSize: 12, color: isDark ? '#d1d5db' : '#555' }}>Процент сервиса</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 type="number"
@@ -634,16 +642,16 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
-            <tr style={{ borderBottom: '2px solid #ddd' }}>
-              <th style={{ textAlign: 'left', padding: 8 }}>ID</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Имя</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Роль</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Рейтинг</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Заявок</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Ставок</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Активных</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Блок</th>
-              <th style={{ textAlign: 'left', padding: 8 }}></th>
+            <tr style={{ borderBottom: `2px solid ${borderColor}`, background: tableHeaderBg }}>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}>ID</th>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}>Имя</th>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}>Роль</th>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}>Рейтинг</th>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}>Заявок</th>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}>Ставок</th>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}>Активных</th>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}>Блок</th>
+              <th style={{ textAlign: 'left', padding: 8, color: tableHeaderText }}></th>
             </tr>
           </thead>
           <tbody>
