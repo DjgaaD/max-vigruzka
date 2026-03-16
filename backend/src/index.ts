@@ -92,7 +92,9 @@ async function sendMaxMessage(userId: number, text: string, auctionId?: number) 
     const response = await fetch(`https://platform-api.max.ru/messages?user_id=${userId}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.maxBotToken}`,
+        // В MAX access_token передаётся прямо в заголовке Authorization без Bearer/OAuth
+        // см. dev.max.ru/docs-api/methods/POST/messages
+        'Authorization': config.maxBotToken,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(messagePayload)
