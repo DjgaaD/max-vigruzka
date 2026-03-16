@@ -1332,6 +1332,9 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                     user_id: backendUser.id,
                     title: 'Тестовая заявка',
                     description: 'Тест для проверки уведомлений и ставок',
+                    street: 'Тестовая улица',
+                    house: '1',
+                    flat: '1',
                     cargo_params: null,
                     date_time: work.toISOString(),
                     auction_ends_at: searchEnd.toISOString()
