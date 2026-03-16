@@ -97,6 +97,15 @@ if errorlevel 1 (
     goto :finish
 )
 echo.
+
+echo 5d. Обновление бэкенда...
+%SSH_CMD% "cd /opt/max-vigruzka && git pull origin master && cd backend && npm install && npm run build && pm2 restart max-vigruzka-backend || pm2 start dist/index.js --name max-vigruzka-backend"
+if errorlevel 1 (
+    echo ОШИБКА: обновление бэкенда на сервере.
+    goto :finish
+)
+echo.
+
 echo ============================================
 echo   ДЕПЛО ЗАВЕРШЁН
 echo   Проверьте https://mintday.ru/ и приложение в MAX
