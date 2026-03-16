@@ -826,6 +826,36 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
               style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
             />
+            <button
+              type="button"
+              disabled={loading}
+              onClick={async () => {
+                if (!backendUser) return;
+                const now = new Date();
+                const work = new Date(now.getTime() + 2 * 60 * 60 * 1000); // через 2 часа
+                const searchEnd = new Date(now.getTime() + 30 * 60 * 1000); // через 30 минут
+                setLoading(true);
+                setError(null);
+                try {
+                  await axios.post(`${API_BASE}/auctions`, {
+                    user_id: backendUser.id,
+                    title: 'Тестовая заявка',
+                    description: 'Тест для проверки уведомлений и ставок',
+                    cargo_params: null,
+                    date_time: work.toISOString(),
+                    auction_ends_at: searchEnd.toISOString()
+                  });
+                  await loadMyAuctions(backendUser.id);
+                } catch {
+                  setError('Не удалось создать тестовую заявку.');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc', background: '#f5f5f5', fontSize: 12 }}
+            >
+              Создать тестовую заявку
+            </button>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label style={{ fontSize: 12, color: '#555' }}>Дата начала работ</label>
               <button
