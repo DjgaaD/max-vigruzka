@@ -286,6 +286,46 @@ interface AdminStats {
   ratings_total: number;
 }
 
+interface AdminAuctionBidDetail {
+  id: number;
+  auction_id: number;
+  loader_id: number;
+  amount: number;
+  created_at: string;
+  loader: {
+    id: number;
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+    rating_avg?: number | null;
+    rating_count?: number;
+  };
+}
+
+interface AdminAuctionDetail {
+  auction: {
+    id: number;
+    title: string;
+    description: string | null;
+    cargo_params: any;
+    date_time: string;
+    auction_ends_at: string;
+    status: string;
+    created_at: string;
+  };
+  customer: {
+    id: number;
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+    rating_avg?: number | null;
+    rating_count?: number;
+  };
+  bids: AdminAuctionBidDetail[];
+  leader_bid?: AdminAuctionBidDetail | null;
+  winner_bid?: AdminAuctionBidDetail | null;
+}
+
 type AdminAuth = { type: 'max'; backendUser: BackendUser } | { type: 'token'; token: string };
 
 function adminAuthConfig(auth: AdminAuth): { params?: { admin_user_id: number }; headers?: { Authorization: string } } {
@@ -301,6 +341,10 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
   const [detail, setDetail] = React.useState<{ user: AdminUser; auctions: Auction[]; bids: unknown[] } | null>(null);
   const [blockModal, setBlockModal] = React.useState<{ userId: number; blocked: boolean; reason: string; until: string } | null>(null);
   const [blockSending, setBlockSending] = React.useState(false);
+  const [auctionDetail, setAuctionDetail] = React.useState<AdminAuctionDetail | null>(null);
+  const [broadcastRole, setBroadcastRole] = React.useState<'customer' | 'loader'>('loader');
+  const [broadcastText, setBroadcastText] = React.useState('');
+  const [broadcastSending, setBroadcastSending] = React.useState(false);
 
   const authConfig = React.useMemo(() => adminAuthConfig(auth), [auth.type, auth.type === 'max' ? auth.backendUser.id : auth.token]);
 
@@ -364,6 +408,60 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
     }
   };
 
+  const refreshDetail = async () => {
+    if (detailId == null) return;
+    try {
+      const res = await axios.get<{ user: AdminUser; auctions: Auction[]; bids: unknown[] }>(
+        `${API_BASE}/admin/users/${detailId}`,
+        authConfig
+      );
+      setDetail(res.data);
+    } catch {
+      onError('Не удалось обновить данные пользователя.');
+    }
+  };
+
+  const finishAuction = async (auctionId: number) => {
+    if (!window.confirm('Завершить эту заявку досрочно?')) return;
+    try {
+      await axios.post(`${API_BASE}/admin/auctions/${auctionId}/finish`, null, authConfig);
+      await loadUsers();
+      await refreshDetail();
+    } catch {
+      onError('Не удалось завершить заявку.');
+    }
+  };
+
+  const openAuctionDetail = async (auctionId: number) => {
+    try {
+      const res = await axios.get<AdminAuctionDetail>(`${API_BASE}/admin/auctions/${auctionId}`, authConfig);
+      setAuctionDetail(res.data);
+    } catch {
+      onError('Не удалось загрузить детали заявки.');
+    }
+  };
+
+  const submitBroadcast = async () => {
+    if (!broadcastText.trim()) {
+      onError('Введите текст рассылки.');
+      return;
+    }
+    setBroadcastSending(true);
+    try {
+      const res = await axios.post<{ recipients: number }>(
+        `${API_BASE}/admin/broadcast`,
+        { role: broadcastRole, text: broadcastText },
+        authConfig
+      );
+      onError(`Рассылка отправлена ${res.data.recipients} пользователям.`);
+      setBroadcastText('');
+    } catch {
+      onError('Не удалось отправить рассылку.');
+    } finally {
+      setBroadcastSending(false);
+    }
+  };
+
   if (loading) return <p style={{ marginTop: 24 }}>Загрузка...</p>;
 
   return (
@@ -383,7 +481,7 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
             <div>Оценок: <strong>{stats.ratings_total}</strong></div>
           </div>
         )}
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           <button
             type="button"
             onClick={async () => {
@@ -398,6 +496,36 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
           >
             Тестовая рассылка грузчикам
           </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 260 }}>
+            <div style={{ fontSize: 12, color: '#555' }}>Массовая рассылка</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select
+                value={broadcastRole}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                  setBroadcastRole(e.target.value === 'customer' ? 'customer' : 'loader')
+                }
+                style={{ padding: 4, borderRadius: 6, border: '1px solid #ccc', fontSize: 12 }}
+              >
+                <option value="loader">Грузчики</option>
+                <option value="customer">Заказчики</option>
+              </select>
+              <button
+                type="button"
+                onClick={submitBroadcast}
+                disabled={broadcastSending}
+                style={{ padding: '6px 12px', fontSize: 12 }}
+              >
+                Отправить
+              </button>
+            </div>
+            <textarea
+              value={broadcastText}
+              onChange={(e) => setBroadcastText(e.target.value)}
+              rows={3}
+              placeholder="Текст сообщения для рассылки"
+              style={{ width: '100%', padding: 6, borderRadius: 6, border: '1px solid #ccc', fontSize: 12, resize: 'vertical' }}
+            />
+          </div>
         </div>
       </div>
 
@@ -464,11 +592,88 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
                 >
                   Удалить
                 </button>
+                {a.status === 'active' && (
+                  <button
+                    type="button"
+                    onClick={() => finishAuction(a.id)}
+                    style={{ marginLeft: 8, padding: '2px 6px', fontSize: 11 }}
+                  >
+                    Завершить
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openAuctionDetail(a.id)}
+                  style={{ marginLeft: 8, padding: '2px 6px', fontSize: 11 }}
+                >
+                  Детали
+                </button>
               </div>
             ))}
           </div>
           <p style={{ fontSize: 12, color: '#666', marginTop: 12 }}>Ставок: {(detail.bids as unknown[]).length}</p>
           <button type="button" onClick={() => { setDetail(null); setDetailId(null); }}>Закрыть</button>
+        </div>
+      )}
+
+      {auctionDetail && (
+        <div style={{ marginTop: 24, padding: 16, border: '1px solid #ccc', borderRadius: 12, background: '#fff7e6' }}>
+          <h5>Заявка #{auctionDetail.auction.id}: {auctionDetail.auction.title}</h5>
+          <p style={{ fontSize: 12, color: '#666' }}>
+            Заказчик: {auctionDetail.customer.first_name} {auctionDetail.customer.last_name}
+            {auctionDetail.customer.rating_avg != null && ` (★ ${auctionDetail.customer.rating_avg})`}
+          </p>
+          {auctionDetail.auction.description && (
+            <p style={{ fontSize: 12 }}>{auctionDetail.auction.description}</p>
+          )}
+          <p style={{ fontSize: 12, color: '#666' }}>
+            Работы: {new Date(auctionDetail.auction.date_time).toLocaleString('ru-RU')} ·
+            Торги до: {new Date(auctionDetail.auction.auction_ends_at).toLocaleString('ru-RU')}
+          </p>
+          <p style={{ fontSize: 12, color: '#666' }}>Статус: {auctionDetail.auction.status}</p>
+
+          <h6 style={{ marginTop: 12, marginBottom: 4 }}>Ставки</h6>
+          {auctionDetail.bids.length === 0 && (
+            <p style={{ fontSize: 12, color: '#666' }}>Ставок пока нет.</p>
+          )}
+          {auctionDetail.bids.length > 0 && (
+            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+              {auctionDetail.bids.map((b) => {
+                const isLeader = auctionDetail.leader_bid && b.id === auctionDetail.leader_bid.id;
+                const isWinner = auctionDetail.winner_bid && b.id === auctionDetail.winner_bid.id;
+                return (
+                  <div
+                    key={b.id}
+                    style={{
+                      padding: 8,
+                      marginBottom: 4,
+                      borderRadius: 8,
+                      border: '1px solid #ddd',
+                      background: isWinner ? '#e6ffed' : isLeader ? '#e6f7ff' : '#fff',
+                      fontSize: 12
+                    }}
+                  >
+                    <div>
+                      Грузчик: {b.loader.first_name} {b.loader.last_name}
+                      {b.loader.rating_avg != null && ` (★ ${b.loader.rating_avg})`}
+                    </div>
+                    <div>Ставка: {b.amount}</div>
+                    <div>Время: {new Date(b.created_at).toLocaleString('ru-RU')}</div>
+                    {isLeader && !isWinner && (
+                      <div style={{ color: '#1890ff', marginTop: 2 }}>Сейчас лидер по цене</div>
+                    )}
+                    {isWinner && (
+                      <div style={{ color: '#389e0d', marginTop: 2 }}>Победитель (лучшая цена при завершении)</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <button type="button" onClick={() => setAuctionDetail(null)} style={{ marginTop: 8 }}>
+            Закрыть детали заявки
+          </button>
         </div>
       )}
 

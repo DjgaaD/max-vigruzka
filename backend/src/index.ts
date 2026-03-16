@@ -299,7 +299,15 @@ app.post('/auctions', async (req, res) => {
     console.log('Грузчики:', loadersResult.rows);
 
     // Рассылаем уведомления грузчикам
-    const messageText = `🚚 Новая заявка на перевозку!\n\n📋 ${title}${description ? '\n' + description : ''}\n⏰ Дата: ${new Date(date_time).toLocaleString('ru-RU')}\n⏳ Торги до: ${new Date(auction_ends_at).toLocaleString('ru-RU')}\n\nОткройте заявку, чтобы сделать ставку!`;
+    const messageText =
+      `🚚 Новая заявка на перевозку!\n\n` +
+      `📋 ${title}${description ? '\n' + description : ''}\n` +
+      `⏰ Дата: ${new Date(date_time).toLocaleString('ru-RU')}\n` +
+      `⏳ Торги до: ${new Date(auction_ends_at).toLocaleString('ru-RU')}\n\n` +
+      `Чтобы сделать ставку:\n` +
+      `1️⃣ Откройте чат с ботом «Аукцион грузчиков» в MAX.\n` +
+      `2️⃣ Нажмите кнопку мини‑приложения внизу чата.\n` +
+      `3️⃣ В разделе «Доступные заявки» выберите эту заявку и укажите свою цену.`;
 
     for (const loader of loadersResult.rows) {
       await sendMaxMessage(loader.max_user_id, messageText, auction.id);
@@ -586,6 +594,98 @@ app.get('/admin/users/:id', async (req, res) => {
   }
 });
 
+// Детали аукциона: заказчик, все ставки, лидер/победитель
+app.get('/admin/auctions/:id', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const auctionId = Number(req.params.id);
+  if (!auctionId) return res.status(400).json({ error: 'auction id required' });
+
+  const client = await pool.connect();
+  try {
+    const auctionRes = await client.query(
+      `select a.*, u.first_name, u.last_name, u.username,
+              u.rating_sum, u.rating_count
+       from auctions a
+       join users u on u.id = a.customer_id
+       where a.id = $1`,
+      [auctionId]
+    );
+    if (auctionRes.rowCount === 0) return res.status(404).json({ error: 'auction not found' });
+    const auctionRow = auctionRes.rows[0];
+    const customerRatingCount = Number(auctionRow.rating_count) || 0;
+    const customerRatingSum = Number(auctionRow.rating_sum) || 0;
+    const customerRatingAvg =
+      customerRatingCount > 0 ? Math.round((customerRatingSum / customerRatingCount) * 10) / 10 : null;
+
+    const bidsRes = await client.query(
+      `select b.*, u.first_name, u.last_name, u.username,
+              u.rating_sum, u.rating_count
+       from bids b
+       join users u on u.id = b.loader_id
+       where b.auction_id = $1
+       order by b.amount asc, b.created_at asc`,
+      [auctionId]
+    );
+
+    const bids = bidsRes.rows.map((b: any) => {
+      const rc = Number(b.rating_count) || 0;
+      const rs = Number(b.rating_sum) || 0;
+      const ra = rc > 0 ? Math.round((rs / rc) * 10) / 10 : null;
+      return {
+        id: b.id,
+        auction_id: b.auction_id,
+        loader_id: b.loader_id,
+        amount: b.amount,
+        created_at: b.created_at,
+        loader: {
+          id: b.loader_id,
+          first_name: b.first_name,
+          last_name: b.last_name,
+          username: b.username,
+          rating_avg: ra,
+          rating_count: rc
+        }
+      };
+    });
+
+    const leaderBid = bids.length > 0 ? bids[0] : null;
+    const isFinished = ['finished', 'paid', 'completed'].includes(auctionRow.status);
+    const winnerBid = isFinished ? leaderBid : null;
+
+    res.json({
+      auction: {
+        id: auctionRow.id,
+        title: auctionRow.title,
+        description: auctionRow.description,
+        cargo_params: auctionRow.cargo_params,
+        date_time: auctionRow.date_time,
+        auction_ends_at: auctionRow.auction_ends_at,
+        status: auctionRow.status,
+        created_at: auctionRow.created_at
+      },
+      customer: {
+        id: auctionRow.customer_id,
+        first_name: auctionRow.first_name,
+        last_name: auctionRow.last_name,
+        username: auctionRow.username,
+        rating_avg: customerRatingAvg,
+        rating_count: customerRatingCount
+      },
+      bids,
+      leader_bid: leaderBid,
+      winner_bid: winnerBid
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
 // Блокировка / разблокировка
 app.post('/admin/users/:id/block', async (req, res) => {
   const check = await requireAdmin(req);
@@ -678,6 +778,135 @@ app.delete('/admin/auctions/:id', async (req, res) => {
   }
 });
 
+async function finishAuctionInternally(auctionId: number): Promise<{ ok: true } | { ok: false; code: 'not_found' | 'not_active' | 'internal'; error: string }> {
+  const client = await pool.connect();
+  try {
+    const auctionRes = await client.query(
+      `select a.*, u.max_user_id as customer_max_user_id,
+              u.first_name as customer_first_name,
+              u.last_name as customer_last_name
+       from auctions a
+       join users u on u.id = a.customer_id
+       where a.id = $1`,
+      [auctionId]
+    );
+    if (auctionRes.rowCount === 0) {
+      return { ok: false, code: 'not_found', error: 'auction not found' };
+    }
+    const auction = auctionRes.rows[0];
+    if (auction.status !== 'active') {
+      return { ok: false, code: 'not_active', error: 'auction is not active' };
+    }
+
+    const updated = await client.query(
+      'update auctions set status = $2, auction_ends_at = now() where id = $1 returning *',
+      [auctionId, 'finished']
+    );
+
+    // Определяем победившую ставку
+    const bidsRes = await client.query(
+      `select b.*, u.first_name, u.last_name, u.username
+       from bids b
+       join users u on u.id = b.loader_id
+       where b.auction_id = $1
+       order by b.amount asc, b.created_at asc`,
+      [auctionId]
+    );
+
+    if (auction.customer_max_user_id) {
+      if (bidsRes.rowCount === 0) {
+        const text =
+          `Заявка «${auction.title}» завершена.\n\n` +
+          `К сожалению, ни один грузчик не сделал ставку.`;
+        await sendMaxMessage(auction.customer_max_user_id, text, auctionId);
+      } else {
+        const winner = bidsRes.rows[0];
+        const customerName =
+          (auction.customer_first_name || '') +
+          (auction.customer_last_name ? ' ' + auction.customer_last_name : '');
+        const loaderName =
+          (winner.first_name || '') +
+          (winner.last_name ? ' ' + winner.last_name : '');
+        const textLines = [
+          customerName ? `Здравствуйте, ${customerName}!` : 'Здравствуйте!',
+          '',
+          `Ваша заявка «${auction.title}» завершена.`,
+          '',
+          `Победившая ставка: ${winner.amount}.`,
+          loaderName ? `Грузчик: ${loaderName}.` : 'Грузчик выбран.',
+          winner.username ? `Контакты MAX: @${winner.username}` : '',
+          '',
+          'Нажмите кнопку, чтобы открыть мини‑приложение и перейти к оплате за получение контактов.'
+        ].filter(Boolean);
+        await sendMaxMessage(auction.customer_max_user_id, textLines.join('\n'), auctionId);
+      }
+    }
+
+    console.log(`Auction ${auctionId} finished internally`);
+    return { ok: true };
+  } catch (e) {
+    console.error('finishAuctionInternally error', e);
+    return { ok: false, code: 'internal', error: 'internal error' };
+  } finally {
+    client.release();
+  }
+}
+
+// Принудительное завершение заявки админом
+app.post('/admin/auctions/:id/finish', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const auctionId = Number(req.params.id);
+  if (!auctionId) return res.status(400).json({ error: 'auction id required' });
+
+  const result = await finishAuctionInternally(auctionId);
+  if (result.ok) {
+    return res.json({ ok: true });
+  }
+  if (result.code === 'not_found') {
+    return res.status(404).json({ error: result.error });
+  }
+  if (result.code === 'not_active') {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.status(500).json({ error: result.error });
+});
+
+// Массовая рассылка по роли
+app.post('/admin/broadcast', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const { role, text } = req.body as { role?: 'customer' | 'loader'; text?: string };
+  if (!role || (role !== 'customer' && role !== 'loader')) {
+    return res.status(400).json({ error: 'role must be customer or loader' });
+  }
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'text is required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const usersRes = await client.query(
+      'select max_user_id from users where role = $1 and is_blocked = false and max_user_id is not null',
+      [role]
+    );
+    let sent = 0;
+    for (const row of usersRes.rows) {
+      await sendMaxMessage(row.max_user_id, text);
+      sent += 1;
+    }
+    res.json({ ok: true, role, recipients: usersRes.rowCount, sent });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
 // Тестовая рассылка уведомлений всем активным грузчикам
 app.post('/admin/test-notify-loaders', async (req, res) => {
   const check = await requireAdmin(req);
@@ -709,6 +938,33 @@ app.post('/admin/test-notify-loaders', async (req, res) => {
 
 async function start() {
   await initDb();
+
+  // Автоматическое закрытие заявок после окончания торгов
+  setInterval(async () => {
+    try {
+      const client = await pool.connect();
+      try {
+        const toClose = await client.query(
+          `select id from auctions
+           where status = 'active'
+             and auction_ends_at <= now()
+           order by auction_ends_at asc
+           limit 20`
+        );
+        for (const row of toClose.rows) {
+          const id = Number(row.id);
+          if (!id) continue;
+          console.log(`Auto-finishing auction ${id} by time`);
+          await finishAuctionInternally(id);
+        }
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      console.error('Auto-finisher error', e);
+    }
+  }, 60_000);
+
   app.listen(config.port, () => {
     // eslint-disable-next-line no-console
     console.log(`Backend listening on port ${config.port}`);
