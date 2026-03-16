@@ -90,7 +90,15 @@ if errorlevel 1 (
 )
 echo.
 
-echo 5c. На сервере: сборка фронта и копирование в /var/www/max-vigruzka...
+echo 5c. На сервере: копирование .env и перезапуск бэкенда...
+%SSH_CMD% "cd /opt/max-vigruzka && if [ -f backend/.env.example ]; then cp backend/.env.example backend/.env && echo .env скопирован; else echo .env.example не найден; fi && cd backend && npm install && pm2 restart max-vigruzka || pm2 start ecosystem.config.js && echo Бэкенд перезапущен"
+if errorlevel 1 (
+    echo ОШИБКА: установка зависимостей или перезапуск бэкенда.
+    goto :finish
+)
+echo.
+
+echo 5d. На сервере: сборка фронта и копирование в /var/www/max-vigruzka...
 %SSH_CMD% "cd /opt/max-vigruzka/frontend && chmod +x node_modules/.bin/vite 2>/dev/null; npm install && npm run build && mkdir -p /var/www/max-vigruzka && rm -rf /var/www/max-vigruzka/* && cp -r dist/* /var/www/max-vigruzka/ && echo FILES: && ls -la /var/www/max-vigruzka/ && systemctl reload nginx && echo NGINX reload OK"
 if errorlevel 1 (
     echo ОШИБКА: сборка или копирование на сервере.

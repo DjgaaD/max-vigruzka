@@ -2,8 +2,38 @@ import crypto from 'crypto';
 import express from 'express';
 import cors from 'cors';
 import { json } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { config } from './config';
 import { initDb, pool } from './db';
+
+// Добавляем логирование в файл
+const logFile = path.join(__dirname, '../logs/app.log');
+if (!fs.existsSync(path.dirname(logFile))) {
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+}
+
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+console.log = (...args) => {
+  const message = `[${new Date().toISOString()}] ${args.join(' ')}\n`;
+  fs.appendFileSync(logFile, message);
+  originalConsoleLog(...args);
+};
+
+console.error = (...args) => {
+  const message = `[${new Date().toISOString()}] ERROR: ${args.join(' ')}\n`;
+  fs.appendFileSync(logFile, message);
+  originalConsoleError(...args);
+};
+
+console.warn = (...args) => {
+  const message = `[${new Date().toISOString()}] WARN: ${args.join(' ')}\n`;
+  fs.appendFileSync(logFile, message);
+  originalConsoleWarn(...args);
+};
 
 const app = express();
 
@@ -17,6 +47,8 @@ async function sendMaxMessage(userId: number, text: string, auctionId?: number) 
     return;
   }
 
+  console.log(`Отправка сообщения пользователю ${userId}, auctionId: ${auctionId}`);
+
   const messagePayload = {
     text,
     attachments: auctionId ? [{
@@ -25,7 +57,7 @@ async function sendMaxMessage(userId: number, text: string, auctionId?: number) 
         buttons: [[{
           type: 'link' as const,
           text: 'Открыть заявку',
-          url: `https://your-domain.com?startapp=auction_${auctionId}`
+          url: `https://mintday.ru?startapp=auction_${auctionId}`
         }]]
       }
     }] : undefined
@@ -40,6 +72,8 @@ async function sendMaxMessage(userId: number, text: string, auctionId?: number) 
       },
       body: JSON.stringify(messagePayload)
     });
+
+    console.log(`Ответ API для пользователя ${userId}:`, response.status, response.statusText);
 
     if (!response.ok) {
       console.error(`Ошибка отправки сообщения пользователю ${userId}:`, response.status, response.statusText);
@@ -232,6 +266,9 @@ app.post('/auctions', async (req, res) => {
       'select max_user_id, first_name, last_name from users where role = $1 and is_blocked = false',
       ['loader']
     );
+
+    console.log(`Найдено грузчиков: ${loadersResult.rowCount}`);
+    console.log('Грузчики:', loadersResult.rows);
 
     // Рассылаем уведомления грузчикам
     const messageText = `🚚 Новая заявка на перевозку!\n\n📋 ${title}${description ? '\n' + description : ''}\n⏰ Дата: ${new Date(date_time).toLocaleString('ru-RU')}\n⏳ Торги до: ${new Date(auction_ends_at).toLocaleString('ru-RU')}\n\nОткройте заявку, чтобы сделать ставку!`;
