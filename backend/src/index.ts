@@ -76,16 +76,14 @@ async function sendMaxMessage(userId: number, text: string, auctionId?: number) 
 
   const messagePayload = {
     text,
-    attachments: auctionId && config.maxWebAppId ? [{
+    attachments: config.maxWebAppId ? [{
       type: 'inline_keyboard' as const,
       payload: {
         buttons: [[{
           type: 'link' as const,
-          text: 'Открыть заявку',
-          // Официальный deeplink MAX: откроет миниприложение внутри MAX по startapp,
-          // а параметр WebAppStartParam передаст auction_<id> внутрь WebApp.
-          // Пример: https://max.ru/?startapp=WEBAPP_ID&WebAppStartParam=auction_7
-          url: `https://max.ru/?startapp=${encodeURIComponent(config.maxWebAppId)}&WebAppStartParam=auction_${auctionId}`
+          text: auctionId ? 'Открыть в приложении' : 'Открыть приложение',
+          // Откроет наше миниприложение внутри MAX на главном экране
+          url: `https://max.ru/?startapp=${encodeURIComponent(config.maxWebAppId)}`
         }]]
       }
     }] : undefined
