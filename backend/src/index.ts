@@ -15,6 +15,7 @@ interface UserRow {
   first_name: string | null;
   last_name: string | null;
   username: string | null;
+  phone: string | null;
   rating_sum: number;
   rating_count: number;
   is_blocked: boolean;
@@ -131,11 +132,12 @@ app.get('/health', (_req, res) => {
 
 // Простейшая авторизация по MAX user (валидировать initData нужно отдельно)
 app.post('/auth/max', async (req, res) => {
-  const { max_user_id, first_name, last_name, username, role } = req.body as {
+  const { max_user_id, first_name, last_name, username, phone, role } = req.body as {
     max_user_id: number;
     first_name?: string;
     last_name?: string;
     username?: string;
+    phone?: string;
     role: 'customer' | 'loader' | 'admin';
   };
 
@@ -158,18 +160,18 @@ app.post('/auth/max', async (req, res) => {
     if (userResult.rowCount === 0) {
       const insertRole = isAdminRequest ? 'admin' : role;
       userResult = await client.query(
-        `insert into users (max_user_id, role, first_name, last_name, username)
-         values ($1, $2, $3, $4, $5)
+        `insert into users (max_user_id, role, first_name, last_name, username, phone)
+         values ($1, $2, $3, $4, $5, $6)
          returning *`,
-        [max_user_id, insertRole, first_name || null, last_name || null, username || null]
+        [max_user_id, insertRole, first_name || null, last_name || null, username || null, phone || null]
       );
     } else {
       const updates = isAdminRequest
-        ? 'first_name = $2, last_name = $3, username = $4, role = \'admin\''
-        : 'first_name = $2, last_name = $3, username = $4';
+        ? 'first_name = $2, last_name = $3, username = $4, phone = $5, role = \'admin\''
+        : 'first_name = $2, last_name = $3, username = $4, phone = $5';
       userResult = await client.query(
         `update users set ${updates} where max_user_id = $1 returning *`,
-        [max_user_id, first_name || null, last_name || null, username || null]
+        [max_user_id, first_name || null, last_name || null, username || null, phone || null]
       );
     }
 
@@ -185,6 +187,7 @@ app.post('/auth/max', async (req, res) => {
       first_name: row.first_name,
       last_name: row.last_name,
       username: row.username,
+      phone: row.phone,
       rating_avg: ratingAvg,
       rating_count: ratingCount,
       created_at: row.created_at
@@ -209,7 +212,7 @@ app.get('/users/profile', async (req, res) => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `select id, max_user_id, role, first_name, last_name, username,
+      `select id, max_user_id, role, first_name, last_name, username, phone,
               rating_sum, rating_count, created_at, is_blocked, block_reason
        from users where id = $1`,
       [userId]
@@ -232,6 +235,7 @@ app.get('/users/profile', async (req, res) => {
         first_name: row.first_name,
         last_name: row.last_name,
         username: row.username,
+        phone: row.phone,
         rating_avg: ratingAvg,
         rating_count: ratingCount,
         created_at: row.created_at
@@ -362,10 +366,12 @@ app.post('/auctions/:id/pay', async (req, res) => {
               c.first_name as customer_first_name,
               c.last_name as customer_last_name,
               c.username  as customer_username,
+              c.phone     as customer_phone,
               l.max_user_id as loader_max_user_id,
               l.first_name as loader_first_name,
               l.last_name as loader_last_name,
-              l.username  as loader_username
+              l.username  as loader_username,
+              l.phone     as loader_phone
        from auctions a
        join users c on c.id = a.customer_id
        left join users l on l.id = a.winner_loader_id
@@ -414,6 +420,7 @@ app.post('/auctions/:id/pay', async (req, res) => {
       const loaderName =
         (auction.loader_first_name || '') +
         (auction.loader_last_name ? ' ' + auction.loader_last_name : '');
+      const loaderPhone = auction.loader_phone;
       const fullAddressParts = [auction.street, auction.house, auction.flat && `кв. ${auction.flat}`].filter(Boolean);
       const textLines = [
         customerName ? `Здравствуйте, ${customerName}!` : 'Здравствуйте!',
@@ -421,6 +428,7 @@ app.post('/auctions/:id/pay', async (req, res) => {
         `Вы оплатили заявку «${auction.title}».`,
         '',
         `Грузчик: ${loaderName}` + (auction.loader_username ? ` (@${auction.loader_username})` : ''),
+        loaderPhone ? `Телефон грузчика: ${loaderPhone}` : '',
         `Сумма: ${price}`,
         fullAddressParts.length ? `Адрес: ${fullAddressParts.join(', ')}` : '',
         '',
@@ -434,11 +442,13 @@ app.post('/auctions/:id/pay', async (req, res) => {
       const customerName =
         (auction.customer_first_name || '') +
         (auction.customer_last_name ? ' ' + auction.customer_last_name : '');
+      const customerPhone = auction.customer_phone;
       const fullAddressParts = [auction.street, auction.house, auction.flat && `кв. ${auction.flat}`].filter(Boolean);
       const textLines = [
         `Поздравляем! Вы выиграли заявку «${auction.title}».`,
         '',
         customerName ? `Заказчик: ${customerName}` + (auction.customer_username ? ` (@${auction.customer_username})` : '') : '',
+        customerPhone ? `Телефон заказчика: ${customerPhone}` : '',
         `Сумма: ${price}`,
         fullAddressParts.length ? `Адрес: ${fullAddressParts.join(', ')}` : '',
         '',

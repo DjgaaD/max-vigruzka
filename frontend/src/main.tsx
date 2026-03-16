@@ -60,7 +60,7 @@ interface AuctionWithCustomer extends Auction {
 
 const API_BASE = '/api';
 
-type MaxUser = { id: number; first_name?: string; last_name?: string; username?: string };
+type MaxUser = { id: number; first_name?: string; last_name?: string; username?: string; phone?: string };
 
 function getStartParam(): string | null {
   try {
@@ -969,11 +969,15 @@ const App: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
+      const unsafeUser: any = (window as any).WebApp?.initDataUnsafe?.user ?? {};
+      const phoneFromUnsafe: string | undefined = unsafeUser.phone_number || unsafeUser.phone;
+      const phone = (user as any).phone || phoneFromUnsafe || undefined;
       const res = await axios.post<{ user: BackendUser }>(`${API_BASE}/auth/max`, {
         max_user_id: user.id,
         first_name: user.first_name,
         last_name: user.last_name,
         username: user.username,
+        phone,
         role: selectedRole
       });
       setBackendUser(res.data.user);

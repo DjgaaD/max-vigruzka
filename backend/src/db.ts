@@ -19,6 +19,7 @@ export async function initDb() {
       first_name text,
       last_name text,
       username text,
+      phone text,
       rating_sum integer default 0,
       rating_count integer default 0,
       is_blocked boolean default false,
@@ -77,6 +78,7 @@ export async function initDb() {
   await pool.query(`
     alter table users add column if not exists block_until timestamptz;
     alter table users add column if not exists balance numeric(14,2) default 0;
+    alter table users add column if not exists phone text;
     alter table auctions add column if not exists street text;
     alter table auctions add column if not exists house text;
     alter table auctions add column if not exists flat text;
