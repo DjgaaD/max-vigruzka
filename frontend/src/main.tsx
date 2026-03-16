@@ -55,6 +55,30 @@ const API_BASE = '/api';
 
 type MaxUser = { id: number; first_name?: string; last_name?: string; username?: string };
 
+function getStartParam(): string | null {
+  try {
+    const w = window as any;
+    const fromUnsafe = w.WebApp?.initDataUnsafe?.start_param;
+    if (typeof fromUnsafe === 'string' && fromUnsafe) return fromUnsafe;
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof location !== 'undefined') {
+      const sp = new URLSearchParams(location.search);
+      const p1 = sp.get('WebAppStartParam') || sp.get('startapp');
+      if (p1) return p1;
+      const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+      const spHash = new URLSearchParams(hash);
+      const p2 = spHash.get('WebAppStartParam') || spHash.get('startapp');
+      if (p2) return p2;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 function todayYYYYMMDD(): string {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -486,6 +510,7 @@ const App: React.FC = () => {
   const [auctionEndTime, setAuctionEndTime] = React.useState('');
   const [myAuctions, setMyAuctions] = React.useState<Auction[]>([]);
   const [activeAuctions, setActiveAuctions] = React.useState<AuctionWithCustomer[]>([]);
+  const [preferredAuctionId, setPreferredAuctionId] = React.useState<number | null>(null);
 
   const [datePicker, setDatePicker] = React.useState<'work' | 'auction' | null>(null);
   const [timePicker, setTimePicker] = React.useState<'work' | 'auction' | null>(null);
@@ -512,6 +537,17 @@ const App: React.FC = () => {
     const t = setInterval(syncUser, 300);
     const stop = setTimeout(() => clearInterval(t), 3000);
     return () => { clearInterval(t); clearTimeout(stop); };
+  }, []);
+
+  React.useEffect(() => {
+    const sp = getStartParam();
+    if (sp && sp.startsWith('auction_')) {
+      const idStr = sp.split('auction_')[1];
+      const id = Number(idStr);
+      if (Number.isFinite(id) && id > 0) {
+        setPreferredAuctionId(id);
+      }
+    }
   }, []);
 
   const handleAuth = async (selectedRole: Role) => {
@@ -559,7 +595,15 @@ const App: React.FC = () => {
   const loadActiveAuctions = async () => {
     try {
       const res = await axios.get<{ auctions: AuctionWithCustomer[] }>(`${API_BASE}/auctions/active`);
-      setActiveAuctions(res.data.auctions);
+      let auctions = res.data.auctions;
+      if (preferredAuctionId) {
+        auctions = [...auctions].sort((a, b) => {
+          if (a.id === preferredAuctionId) return -1;
+          if (b.id === preferredAuctionId) return 1;
+          return 0;
+        });
+      }
+      setActiveAuctions(auctions);
     } catch (e) {
       console.error('Failed to load active auctions:', e);
     }
