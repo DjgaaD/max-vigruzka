@@ -1695,15 +1695,16 @@ const AdminWebEntry: React.FC = () => {
 
   if (!token) {
     return (
-      <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', maxWidth: 360, margin: '40px auto' }}>
-        <h2 style={{ marginTop: 0 }}>Вход в админ-панель</h2>
-        <p style={{ color: '#666', fontSize: 14 }}>Поиск грузчиков — mintday.ru</p>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617', color: '#e5e7eb', fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ padding: 24, maxWidth: 360, width: '100%', borderRadius: 16, background: '#0f172a', border: '1px solid #1f2937', boxShadow: '0 20px 40px rgba(0,0,0,0.6)' }}>
+          <h2 style={{ marginTop: 0, marginBottom: 4, fontSize: 20 }}>Вход в админ‑панель</h2>
+          <p style={{ color: '#9ca3af', fontSize: 13, marginTop: 0, marginBottom: 16 }}>Поиск грузчиков — mintday.ru</p>
         {serverConfigured === false && (
-          <p style={{ color: '#c00', marginBottom: 16, fontSize: 13 }}>
+          <p style={{ color: '#f97373', marginBottom: 16, fontSize: 13 }}>
             Сервер не настроен: на бэкенде не заданы ADMIN_LOGIN и ADMIN_PASSWORD (файл .env на сервере или переменные окружения). Запрос к API может не доходить до сервера.
           </p>
         )}
-        {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
+        {error && <p style={{ color: '#f97373', marginBottom: 16, fontSize: 13 }}>{error}</p>}
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <input
             type="text"
@@ -1711,7 +1712,7 @@ const AdminWebEntry: React.FC = () => {
             value={login}
             onChange={(e) => setLogin(e.target.value)}
             required
-            style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
+            style={{ padding: 10, borderRadius: 8, border: '1px solid #374151', background: '#020617', color: '#e5e7eb', fontSize: 14 }}
           />
           <input
             type="password"
@@ -1719,12 +1720,28 @@ const AdminWebEntry: React.FC = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            style={{ padding: 10, borderRadius: 8, border: '1px solid #ccc' }}
+            style={{ padding: 10, borderRadius: 8, border: '1px solid #374151', background: '#020617', color: '#e5e7eb', fontSize: 14 }}
           />
-          <button type="submit" disabled={loading} style={{ padding: 12, borderRadius: 8, border: '1px solid #1976d2', background: '#1976d2', color: '#fff' }}>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              padding: 12,
+              borderRadius: 999,
+              border: 'none',
+              background: '#2563eb',
+              color: '#f9fafb',
+              fontWeight: 600,
+              fontSize: 14,
+              cursor: 'pointer',
+              boxShadow: '0 10px 25px rgba(37,99,235,0.4)',
+              opacity: loading ? 0.7 : 1
+            }}
+          >
             {loading ? 'Вход...' : 'Войти'}
           </button>
         </form>
+        </div>
       </div>
     );
   }
