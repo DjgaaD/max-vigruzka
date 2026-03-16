@@ -1100,7 +1100,7 @@ async function finishAuctionInternally(auctionId: number): Promise<{ ok: true } 
     );
 
     let winner: any | null = null;
-    if (bidsRes.rowCount > 0) {
+    if (bidsRes && typeof bidsRes.rowCount === 'number' && bidsRes.rowCount > 0) {
       winner = bidsRes.rows[0];
     }
 
@@ -1280,7 +1280,7 @@ app.post('/admin/test-notify-loaders', async (req, res) => {
 async function start() {
   await initDb();
 
-  // Автоматическое закрытие заявок после окончания торгов
+  // Автоматическое закрытие заявок по времени окончания торгов (auction_ends_at)
   setInterval(async () => {
     try {
       const client = await pool.connect();
@@ -1295,7 +1295,7 @@ async function start() {
         for (const row of toClose.rows) {
           const id = Number(row.id);
           if (!id) continue;
-          console.log(`Auto-finishing auction ${id} by time`);
+          console.log(`Auto-finishing auction ${id} by auction_ends_at`);
           await finishAuctionInternally(id);
         }
       } finally {
