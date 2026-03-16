@@ -1704,13 +1704,19 @@ const AdminWebEntry: React.FC = () => {
     );
   }
 
+  const isDark = true;
+  const bg = isDark ? '#020617' : '#fff';
+  const text = isDark ? '#e5e7eb' : '#000';
+
   return (
-    <div style={{ padding: 16, fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <button type="button" onClick={handleLogout} style={{ padding: '6px 12px', fontSize: 12, color: '#666' }}>Выйти</button>
+    <div style={{ minHeight: '100vh', padding: 16, fontFamily: 'system-ui, sans-serif', background: bg, color: text, boxSizing: 'border-box' }}>
+      <div style={{ maxWidth: 960, margin: '0 auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button type="button" onClick={handleLogout} style={{ padding: '6px 12px', fontSize: 12, color: isDark ? '#9ca3af' : '#666', background: 'transparent', border: '1px solid transparent', cursor: 'pointer' }}>Выйти</button>
+        </div>
+        <AdminPanel auth={{ type: 'token', token }} onError={setError} />
+        {error && <p style={{ color: '#f97373', marginTop: 16 }}>{error}</p>}
       </div>
-      <AdminPanel auth={{ type: 'token', token }} onError={setError} />
-      {error && <p style={{ color: 'red', marginTop: 16 }}>{error}</p>}
     </div>
   );
 };
