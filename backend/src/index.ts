@@ -477,7 +477,7 @@ app.get('/admin/users', async (req, res) => {
       block_until: u.block_until
     }));
 
-    const withStats = await Promise.all(list.map(async (u: UserWithStats) => {
+    const withStats = await Promise.all(list.map(async (u: any) => {
       const auc = await client.query('select count(*) as c from auctions where customer_id = $1', [u.id]);
       const bids = await client.query('select count(*) as c from bids where loader_id = $1', [u.id]);
       const activeAuc = await client.query("select count(*) as c from auctions where customer_id = $1 and status in ('active','paid')", [u.id]);
