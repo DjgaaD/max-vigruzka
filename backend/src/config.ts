@@ -20,6 +20,8 @@ export const config = {
     database: String(process.env.DB_NAME ?? 'max_vigruzka')
   },
   maxBotToken: process.env.MAX_BOT_TOKEN || '',
+  // ID мини‑приложения в MAX (значение startapp), берётся из кабинета разработчика
+  maxWebAppId: process.env.MAX_WEBAPP_ID || '',
   adminMaxUserIds: adminIdsRaw ? adminIdsRaw.split(',').map((s) => Number(s.trim())).filter(Boolean) : [] as number[],
   adminLogin: String(process.env.ADMIN_LOGIN ?? ''),
   adminPassword: String(process.env.ADMIN_PASSWORD ?? '')
