@@ -502,11 +502,13 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
   if (loading) return <p style={{ marginTop: 24 }}>Загрузка...</p>;
 
   const isDark = true; // включаем тёмную тему для админки
-  const bgMain = isDark ? '#0f172a' : '#fff';
+  const bgMain = isDark ? '#020617' : '#fff';
   const textMain = isDark ? '#e5e7eb' : '#000';
-  const cardBg = isDark ? '#1f2937' : '#f0f7ff';
-  const borderColor = isDark ? '#374151' : '#e0e0e0';
-  const tableHeaderBg = isDark ? '#111827' : undefined;
+  const cardBg = isDark ? '#0f172a' : '#f0f7ff';
+  const borderColor = isDark ? '#1f2937' : '#e0e0e0';
+  const subCardBg = isDark ? '#020617' : '#fafafa';
+  const mutedText = isDark ? '#9ca3af' : '#666';
+  const tableHeaderBg = isDark ? '#020617' : undefined;
   const tableHeaderText = isDark ? '#e5e7eb' : undefined;
 
   return (
@@ -656,7 +658,7 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} style={{ borderBottom: '1px solid #eee' }}>
+              <tr key={u.id} style={{ borderBottom: `1px solid ${borderColor}` }}>
                 <td style={{ padding: 8 }}>{u.id}</td>
                 <td style={{ padding: 8 }}>{u.first_name} {u.last_name}</td>
                 <td style={{ padding: 8 }}>{u.role === 'customer' ? 'Заказчик' : 'Грузчик'}</td>
@@ -676,12 +678,12 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
       </div>
 
       {detail && (
-        <div style={{ marginTop: 24, padding: 16, border: '1px solid #ddd', borderRadius: 12, background: '#fafafa' }}>
+        <div style={{ marginTop: 24, padding: 16, border: `1px solid ${borderColor}`, borderRadius: 12, background: cardBg }}>
           <h5>Пользователь: {detail.user.first_name} {detail.user.last_name} (ID {detail.user.id})</h5>
-          <p style={{ fontSize: 12, color: '#666' }}>Заявок: {detail.auctions.length}</p>
+          <p style={{ fontSize: 12, color: mutedText }}>Заявок: {detail.auctions.length}</p>
           <div style={{ maxHeight: 200, overflowY: 'auto' }}>
             {detail.auctions.map((a) => (
-              <div key={a.id} style={{ padding: 8, marginBottom: 4, background: '#fff', borderRadius: 8, fontSize: 12 }}>
+              <div key={a.id} style={{ padding: 8, marginBottom: 4, background: subCardBg, borderRadius: 8, fontSize: 12, border: `1px solid ${borderColor}` }}>
                 <strong>{a.title}</strong> — {a.status}, {new Date(a.date_time).toLocaleString('ru-RU')}
                 <button
                   type="button"
@@ -720,30 +722,30 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
               </div>
             ))}
           </div>
-          <p style={{ fontSize: 12, color: '#666', marginTop: 12 }}>Ставок: {(detail.bids as unknown[]).length}</p>
+          <p style={{ fontSize: 12, color: mutedText, marginTop: 12 }}>Ставок: {(detail.bids as unknown[]).length}</p>
           <button type="button" onClick={() => { setDetail(null); setDetailId(null); }}>Закрыть</button>
         </div>
       )}
 
       {auctionDetail && (
-        <div style={{ marginTop: 24, padding: 16, border: '1px solid #ccc', borderRadius: 12, background: '#fff7e6' }}>
+        <div style={{ marginTop: 24, padding: 16, border: `1px solid ${borderColor}`, borderRadius: 12, background: cardBg }}>
           <h5>Заявка #{auctionDetail.auction.id}: {auctionDetail.auction.title}</h5>
-          <p style={{ fontSize: 12, color: '#666' }}>
+          <p style={{ fontSize: 12, color: mutedText }}>
             Заказчик: {auctionDetail.customer.first_name} {auctionDetail.customer.last_name}
             {auctionDetail.customer.rating_avg != null && ` (★ ${auctionDetail.customer.rating_avg})`}
           </p>
           {auctionDetail.auction.description && (
             <p style={{ fontSize: 12 }}>{auctionDetail.auction.description}</p>
           )}
-          <p style={{ fontSize: 12, color: '#666' }}>
+          <p style={{ fontSize: 12, color: mutedText }}>
             Работы: {new Date(auctionDetail.auction.date_time).toLocaleString('ru-RU')} ·
             Торги до: {new Date(auctionDetail.auction.auction_ends_at).toLocaleString('ru-RU')}
           </p>
-          <p style={{ fontSize: 12, color: '#666' }}>Статус: {auctionDetail.auction.status}</p>
+          <p style={{ fontSize: 12, color: mutedText }}>Статус: {auctionDetail.auction.status}</p>
 
           <h6 style={{ marginTop: 12, marginBottom: 4 }}>Ставки</h6>
           {auctionDetail.bids.length === 0 && (
-            <p style={{ fontSize: 12, color: '#666' }}>Ставок пока нет.</p>
+            <p style={{ fontSize: 12, color: mutedText }}>Ставок пока нет.</p>
           )}
           {auctionDetail.bids.length > 0 && (
             <div style={{ maxHeight: 220, overflowY: 'auto' }}>
@@ -791,18 +793,18 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
       {tab === 'active' && (
         <div style={{ marginTop: 8 }}>
           <h5 style={{ marginBottom: 8 }}>Активные заявки</h5>
-          {adminActiveAuctions.length === 0 && <p style={{ fontSize: 13, color: '#666' }}>Нет активных заявок.</p>}
+          {adminActiveAuctions.length === 0 && <p style={{ fontSize: 13, color: mutedText }}>Нет активных заявок.</p>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {adminActiveAuctions.map((a) => (
-              <div key={a.id} style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd', background: '#fff' }}>
+              <div key={a.id} style={{ padding: 10, borderRadius: 8, border: `1px solid ${borderColor}`, background: subCardBg }}>
                 <strong>{a.title}</strong>
-                <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: mutedText, marginTop: 2 }}>
                   Заказчик: {a.first_name} {a.last_name}
                 </div>
-                <div style={{ fontSize: 12, color: '#666' }}>
+                <div style={{ fontSize: 12, color: mutedText }}>
                   Работы: {new Date(a.date_time).toLocaleString('ru-RU')} · Торги до: {new Date(a.auction_ends_at).toLocaleString('ru-RU')}
                 </div>
-                <div style={{ fontSize: 12, color: '#666' }}>
+                <div style={{ fontSize: 12, color: mutedText }}>
                   Статус: {a.status} · Ставок: {a.bids_count ?? 0}
                 </div>
                 <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
@@ -832,18 +834,18 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
       {tab === 'completed' && (
         <div style={{ marginTop: 8 }}>
           <h5 style={{ marginBottom: 8 }}>Завершённые заявки</h5>
-          {adminCompletedAuctions.length === 0 && <p style={{ fontSize: 13, color: '#666' }}>Пока нет завершённых заявок.</p>}
+          {adminCompletedAuctions.length === 0 && <p style={{ fontSize: 13, color: mutedText }}>Пока нет завершённых заявок.</p>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {adminCompletedAuctions.map((a) => (
-              <div key={a.id} style={{ padding: 10, borderRadius: 8, border: '1px solid #eee', background: '#fff' }}>
+              <div key={a.id} style={{ padding: 10, borderRadius: 8, border: `1px solid ${borderColor}`, background: subCardBg }}>
                 <strong>{a.title}</strong>
-                <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: mutedText, marginTop: 2 }}>
                   Заказчик: {a.first_name} {a.last_name}
                 </div>
-                <div style={{ fontSize: 12, color: '#666' }}>
+                <div style={{ fontSize: 12, color: mutedText }}>
                   Работы: {new Date(a.date_time).toLocaleString('ru-RU')}
                 </div>
-                <div style={{ fontSize: 12, color: '#666' }}>
+                <div style={{ fontSize: 12, color: mutedText }}>
                   Статус: {a.status} · Ставок: {a.bids_count ?? 0}
                 </div>
                 <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
