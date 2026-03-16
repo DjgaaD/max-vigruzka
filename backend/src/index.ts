@@ -675,6 +675,35 @@ app.delete('/admin/auctions/:id', async (req, res) => {
   }
 });
 
+// Тестовая рассылка уведомлений всем активным грузчикам
+app.post('/admin/test-notify-loaders', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const client = await pool.connect();
+  try {
+    const loadersResult = await client.query(
+      'select max_user_id, first_name, last_name from users where role = $1 and is_blocked = false',
+      ['loader']
+    );
+    const text = 'Тестовое уведомление от админа MAX: проверка доставки сообщений грузчикам. Если вы видите это сообщение, бот настроен правильно.';
+
+    let sent = 0;
+    for (const loader of loadersResult.rows) {
+      await sendMaxMessage(loader.max_user_id, text);
+      sent += 1;
+    }
+
+    res.json({ ok: true, loaders: loadersResult.rowCount, sent });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
 async function start() {
   await initDb();
   app.listen(config.port, () => {

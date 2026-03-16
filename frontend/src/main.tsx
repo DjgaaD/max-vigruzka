@@ -359,6 +359,22 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
             <div>Оценок: <strong>{stats.ratings_total}</strong></div>
           </div>
         )}
+        <div style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await axios.post(`${API_BASE}/admin/test-notify-loaders`, null, authConfig);
+                onError('Тестовая рассылка запущена (см. лог бэкенда).');
+              } catch {
+                onError('Не удалось запустить тестовую рассылку.');
+              }
+            }}
+            style={{ padding: '6px 12px', fontSize: 12 }}
+          >
+            Тестовая рассылка грузчикам
+          </button>
+        </div>
       </div>
 
       <h5 style={{ marginBottom: 8 }}>Пользователи</h5>
