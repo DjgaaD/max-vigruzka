@@ -10,6 +10,49 @@ const app = express();
 const ADMIN_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const adminTokens = new Map<string, number>();
 
+// Функция для отправки сообщения через MAX API
+async function sendMaxMessage(userId: number, text: string, auctionId?: number) {
+  if (!config.maxBotToken) {
+    console.warn('MAX_BOT_TOKEN не настроен, пропускаю отправку сообщения');
+    return;
+  }
+
+  const messagePayload = {
+    text,
+    attachments: auctionId ? [{
+      type: 'inline_keyboard' as const,
+      payload: {
+        buttons: [[{
+          type: 'link' as const,
+          text: 'Открыть заявку',
+          url: `https://your-domain.com?startapp=auction_${auctionId}`
+        }]]
+      }
+    }] : undefined
+  };
+
+  try {
+    const response = await fetch(`https://platform-api.max.ru/messages?user_id=${userId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.maxBotToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(messagePayload)
+    });
+
+    if (!response.ok) {
+      console.error(`Ошибка отправки сообщения пользователю ${userId}:`, response.status, response.statusText);
+      const errorText = await response.text();
+      console.error('Текст ошибки:', errorText);
+    } else {
+      console.log(`Сообщение успешно отправлено пользователю ${userId}`);
+    }
+  } catch (error) {
+    console.error(`Ошибка при отправке сообщения пользователю ${userId}:`, error);
+  }
+}
+
 function createAdminToken(): string {
   const token = crypto.randomBytes(32).toString('hex');
   adminTokens.set(token, Date.now() + ADMIN_TOKEN_TTL_MS);
@@ -182,6 +225,23 @@ app.post('/auctions', async (req, res) => {
       [user_id, title, description || null, cargo_params || null, date_time, auction_ends_at]
     );
 
+    const auction = result.rows[0];
+
+    // Получаем всех грузчиков для рассылки
+    const loadersResult = await client.query(
+      'select max_user_id, first_name, last_name from users where role = $1 and is_blocked = false',
+      ['loader']
+    );
+
+    // Рассылаем уведомления грузчикам
+    const messageText = `🚚 Новая заявка на перевозку!\n\n📋 ${title}${description ? '\n' + description : ''}\n⏰ Дата: ${new Date(date_time).toLocaleString('ru-RU')}\n⏳ Торги до: ${new Date(auction_ends_at).toLocaleString('ru-RU')}\n\nОткройте заявку, чтобы сделать ставку!`;
+
+    for (const loader of loadersResult.rows) {
+      await sendMaxMessage(loader.max_user_id, messageText, auction.id);
+    }
+
+    console.log(`Рассылка завершена: отправлено ${loadersResult.rowCount} уведомлений грузчикам`);
+
     res.json({ auction: result.rows[0] });
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -210,6 +270,79 @@ app.get('/auctions/my', async (req, res) => {
     res.json({ auctions: result.rows });
   } catch (e) {
     // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Список активных аукционов для грузчиков
+app.get('/auctions/active', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `select a.*, u.first_name, u.last_name, u.username,
+              (select count(*) from bids where auction_id = a.id) as bids_count
+       from auctions a
+       join users u on a.customer_id = u.id
+       where a.status = 'active' and a.auction_ends_at > now()
+       order by a.created_at desc`
+    );
+    res.json({ auctions: result.rows });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Создание ставки грузчиком
+app.post('/bids', async (req, res) => {
+  const { auction_id, loader_id, amount } = req.body as {
+    auction_id: number;
+    loader_id: number;
+    amount: number;
+  };
+
+  if (!auction_id || !loader_id || !amount || amount <= 0) {
+    return res.status(400).json({ error: 'auction_id, loader_id and positive amount are required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    // Проверяем, что грузчик существует и не заблокирован
+    const loaderResult = await client.query(
+      'select * from users where id = $1 and role = $2 and is_blocked = false',
+      [loader_id, 'loader']
+    );
+    if (loaderResult.rowCount === 0) {
+      return res.status(404).json({ error: 'loader not found or blocked' });
+    }
+
+    // Проверяем, что аукцион активен и не завершен
+    const auctionResult = await client.query(
+      'select * from auctions where id = $1 and status = $2 and auction_ends_at > now()',
+      [auction_id, 'active']
+    );
+    if (auctionResult.rowCount === 0) {
+      return res.status(404).json({ error: 'auction not found or not active' });
+    }
+
+    // Создаем или обновляем ставку
+    const result = await client.query(
+      `insert into bids (auction_id, loader_id, amount)
+       values ($1, $2, $3)
+       on conflict (auction_id, loader_id) 
+       do update set amount = $3, created_at = now()
+       returning *`,
+      [auction_id, loader_id, amount]
+    );
+
+    res.json({ bid: result.rows[0] });
+  } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Internal error' });
   } finally {

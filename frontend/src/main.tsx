@@ -44,6 +44,13 @@ interface Auction {
   status: string;
 }
 
+interface AuctionWithCustomer extends Auction {
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  bids_count?: number;
+}
+
 const API_BASE = '/api';
 
 type MaxUser = { id: number; first_name?: string; last_name?: string; username?: string };
@@ -444,6 +451,7 @@ const App: React.FC = () => {
   const [auctionEndDate, setAuctionEndDate] = React.useState('');
   const [auctionEndTime, setAuctionEndTime] = React.useState('');
   const [myAuctions, setMyAuctions] = React.useState<Auction[]>([]);
+  const [activeAuctions, setActiveAuctions] = React.useState<AuctionWithCustomer[]>([]);
 
   const [datePicker, setDatePicker] = React.useState<'work' | 'auction' | null>(null);
   const [timePicker, setTimePicker] = React.useState<'work' | 'auction' | null>(null);
@@ -493,6 +501,8 @@ const App: React.FC = () => {
       setRole(selectedRole);
       if (selectedRole === 'customer') {
         await loadMyAuctions(res.data.user.id);
+      } else if (selectedRole === 'loader') {
+        await loadActiveAuctions();
       }
     } catch (e) {
       setError('Ошибка авторизации. Проверьте подключение к серверу.');
@@ -507,8 +517,53 @@ const App: React.FC = () => {
         params: { user_id: userId }
       });
       setMyAuctions(res.data.auctions);
-    } catch {
-      setError('Не удалось загрузить ваши заявки.');
+    } catch (e) {
+      console.error('Failed to load my auctions:', e);
+    }
+  };
+
+  const loadActiveAuctions = async () => {
+    try {
+      const res = await axios.get<{ auctions: AuctionWithCustomer[] }>(`${API_BASE}/auctions/active`);
+      setActiveAuctions(res.data.auctions);
+    } catch (e) {
+      console.error('Failed to load active auctions:', e);
+    }
+  };
+
+  const handlePlaceBid = async (auctionId: number) => {
+    if (!backendUser) {
+      setError('Сначала авторизуйтесь');
+      return;
+    }
+
+    const input = document.getElementById(`bid-${auctionId}`) as HTMLInputElement;
+    const amount = Number(input?.value);
+    
+    if (!amount || amount <= 0) {
+      setError('Введите корректную сумму ставки');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await axios.post(`${API_BASE}/bids`, {
+        auction_id: auctionId,
+        loader_id: backendUser.id,
+        amount
+      });
+      
+      // Обновляем список активных аукционов
+      await loadActiveAuctions();
+      
+      // Очищаем поле ввода
+      if (input) input.value = '';
+      
+      setError('Ставка успешно сделана!');
+    } catch (e: any) {
+      setError(e.response?.data?.error || 'Не удалось сделать ставку');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -870,12 +925,79 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               Разместить заявку
             </Button>
           </div>
-          </>
-          )}
+          </div>
+          </>)}
           {role === 'loader' && (
-            <p style={{ marginTop: 16, padding: 12, background: '#f5f5f5', borderRadius: 8 }}>
-              <strong>Искать заявки</strong> — раздел в разработке. Здесь будет список заявок и возможность делать ставки.
-            </p>
+            <div style={{ marginBottom: 16 }}>
+              <h4 style={{ margin: '0 0 8px 0', fontSize: 16 }}>🔥 Активные заявки</h4>
+              <p style={{ margin: '0 0 12px 0', fontSize: 13, color: '#666' }}>
+                Сделайте ставку на заявки, которые вам интересны
+              </p>
+              {activeAuctions.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>Активных заявок пока нет</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {activeAuctions.map((auction: AuctionWithCustomer) => (
+                    <div key={auction.id} style={{ 
+                      border: '1px solid #ddd', 
+                      borderRadius: 8, 
+                      padding: 12,
+                      background: '#fafafa'
+                    }}>
+                      <div style={{ marginBottom: 8 }}>
+                        <strong style={{ fontSize: 14 }}>{auction.title}</strong>
+                        {auction.description && (
+                          <p style={{ margin: '4px 0', fontSize: 13, color: '#666' }}>
+                            {auction.description}
+                          </p>
+                        )}
+                      </div>
+                      
+                      <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                        <div>👤 {auction.first_name} {auction.last_name}</div>
+                        <div>⏰ Работы: {new Date(auction.date_time).toLocaleString('ru-RU')}</div>
+                        <div>⏳ Торги до: {new Date(auction.auction_ends_at).toLocaleString('ru-RU')}</div>
+                        <div>📊 Ставок: {auction.bids_count || 0}</div>
+                      </div>
+                      
+                      {new Date(auction.auction_ends_at) > new Date() ? (
+                        <div>
+                          <input
+                            type="number"
+                            placeholder="Ваша ставка (₽)"
+                            style={{ 
+                              width: '100%', 
+                              padding: '8px', 
+                              border: '1px solid #ddd', 
+                              borderRadius: 4,
+                              marginBottom: 8,
+                              fontSize: 14
+                            }}
+                            id={`bid-${auction.id}`}
+                          />
+                          <Button
+                            onClick={() => handlePlaceBid(auction.id)}
+                            disabled={!backendUser}
+                          >
+                            Сделать ставку
+                          </Button>
+                        </div>
+                      ) : (
+                        <div style={{ 
+                          padding: 8, 
+                          background: '#fff3cd', 
+                          borderRadius: 4, 
+                          fontSize: 12,
+                          color: '#856404'
+                        }}>
+                          ⏰ Торги завершены
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
