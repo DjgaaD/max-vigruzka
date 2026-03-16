@@ -614,27 +614,49 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
           </div>
         </div>
       </div>
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
         <button
           type="button"
-          onClick={() => setTab('users')}
+          onClick={async () => {
+            setTab('users');
+            await loadUsers();
+          }}
           style={{ padding: '6px 12px', fontSize: 12, borderRadius: 16, border: '1px solid #ccc', background: tab === 'users' ? '#1890ff' : '#fff', color: tab === 'users' ? '#fff' : '#333' }}
         >
           Пользователи
         </button>
         <button
           type="button"
-          onClick={() => setTab('active')}
+          onClick={async () => {
+            setTab('active');
+            await loadAdminAuctions();
+          }}
           style={{ padding: '6px 12px', fontSize: 12, borderRadius: 16, border: '1px solid #ccc', background: tab === 'active' ? '#1890ff' : '#fff', color: tab === 'active' ? '#fff' : '#333' }}
         >
           Активные заявки
         </button>
         <button
           type="button"
-          onClick={() => setTab('completed')}
+          onClick={async () => {
+            setTab('completed');
+            await loadAdminAuctions();
+          }}
           style={{ padding: '6px 12px', fontSize: 12, borderRadius: 16, border: '1px solid #ccc', background: tab === 'completed' ? '#1890ff' : '#fff', color: tab === 'completed' ? '#fff' : '#333' }}
         >
           Завершённые заявки
+        </button>
+        <button
+          type="button"
+          onClick={async () => {
+            if (tab === 'users') {
+              await loadUsers();
+            } else {
+              await loadAdminAuctions();
+            }
+          }}
+          style={{ marginLeft: 'auto', padding: '6px 12px', fontSize: 12, borderRadius: 16, border: '1px solid #4b5563', background: '#111827', color: '#e5e7eb' }}
+        >
+          Обновить
         </button>
       </div>
 
