@@ -39,9 +39,16 @@ interface Auction {
   id: number;
   title: string;
   description: string | null;
+  street?: string | null;
+  house?: string | null;
+  flat?: string | null;
   date_time: string;
   auction_ends_at: string;
   status: string;
+  winner_loader_id?: number | null;
+  payment_status?: 'waiting_payment' | 'paid' | 'completed' | null;
+  loader_marked_done?: boolean;
+  customer_confirmed_done?: boolean;
 }
 
 interface AuctionWithCustomer extends Auction {
@@ -284,6 +291,7 @@ interface AdminStats {
   auctions_active: number;
   bids_total: number;
   ratings_total: number;
+  service_fee_percent?: number;
 }
 
 interface AdminAuctionBidDetail {
@@ -345,6 +353,8 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
   const [broadcastRole, setBroadcastRole] = React.useState<'customer' | 'loader'>('loader');
   const [broadcastText, setBroadcastText] = React.useState('');
   const [broadcastSending, setBroadcastSending] = React.useState(false);
+  const [serviceFee, setServiceFee] = React.useState<string>('');
+  const [serviceFeeSaving, setServiceFeeSaving] = React.useState(false);
 
   const authConfig = React.useMemo(() => adminAuthConfig(auth), [auth.type, auth.type === 'max' ? auth.backendUser.id : auth.token]);
 
@@ -361,6 +371,9 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
     try {
       const res = await axios.get<AdminStats>(`${API_BASE}/admin/stats`, authConfig);
       setStats(res.data);
+      if (res.data.service_fee_percent != null) {
+        setServiceFee(String(res.data.service_fee_percent));
+      }
     } catch {
       onError('Не удалось загрузить статистику.');
     }
@@ -479,6 +492,7 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
             <div>Заявок активных: <strong>{stats.auctions_active}</strong></div>
             <div>Ставок всего: <strong>{stats.bids_total}</strong></div>
             <div>Оценок: <strong>{stats.ratings_total}</strong></div>
+            <div>Комиссия сервиса: <strong>{stats.service_fee_percent ?? 10}%</strong></div>
           </div>
         )}
         <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -525,6 +539,44 @@ const AdminPanel: React.FC<{ auth: AdminAuth; onError: (s: string | null) => voi
               placeholder="Текст сообщения для рассылки"
               style={{ width: '100%', padding: 6, borderRadius: 6, border: '1px solid #ccc', fontSize: 12, resize: 'vertical' }}
             />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200 }}>
+            <div style={{ fontSize: 12, color: '#555' }}>Процент сервиса</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                value={serviceFee}
+                onChange={(e) => setServiceFee(e.target.value)}
+                style={{ width: 80, padding: 4, borderRadius: 6, border: '1px solid #ccc', fontSize: 12 }}
+              />
+              <span style={{ fontSize: 12 }}>%</span>
+              <button
+                type="button"
+                disabled={serviceFeeSaving}
+                onClick={async () => {
+                  const v = Number(serviceFee);
+                  if (!Number.isFinite(v) || v < 0 || v > 100) {
+                    onError('Введите процент от 0 до 100.');
+                    return;
+                  }
+                  setServiceFeeSaving(true);
+                  try {
+                    await axios.post(`${API_BASE}/admin/service-fee`, { percent: v }, authConfig);
+                    await loadStats();
+                  } catch {
+                    onError('Не удалось сохранить процент сервиса.');
+                  } finally {
+                    setServiceFeeSaving(false);
+                  }
+                }}
+                style={{ padding: '6px 12px', fontSize: 12 }}
+              >
+                Сохранить
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -713,6 +765,9 @@ const App: React.FC = () => {
   const [workTime, setWorkTime] = React.useState('');
   const [auctionEndDate, setAuctionEndDate] = React.useState('');
   const [auctionEndTime, setAuctionEndTime] = React.useState('');
+  const [street, setStreet] = React.useState('');
+  const [house, setHouse] = React.useState('');
+  const [flat, setFlat] = React.useState('');
   const [myAuctions, setMyAuctions] = React.useState<Auction[]>([]);
   const [activeAuctions, setActiveAuctions] = React.useState<AuctionWithCustomer[]>([]);
   const [preferredAuctionId, setPreferredAuctionId] = React.useState<number | null>(null);
@@ -853,7 +908,7 @@ const App: React.FC = () => {
   const handleCreateAuction = async () => {
     if (!backendUser) return;
     if (!title || !workDate || !workTime || !auctionEndDate || !auctionEndTime) {
-      setError('Заполните название, дату и время работ и окончания поиска.');
+      setError('Заполните название, адрес, дату и время работ и окончания поиска.');
       return;
     }
     const workStart = new Date(`${workDate}T${workTime}:00`).getTime();
@@ -877,12 +932,18 @@ const App: React.FC = () => {
         user_id: backendUser.id,
         title,
         description,
+        street,
+        house,
+        flat,
         cargo_params: null,
         date_time: dateTimeISO,
         auction_ends_at: auctionEndsAtISO
       });
       setTitle('');
       setDescription('');
+      setStreet('');
+      setHouse('');
+      setFlat('');
       setWorkDate('');
       setWorkTime('');
       setAuctionEndDate('');
@@ -972,6 +1033,14 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                 <div key={a.id} style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd', background: '#fff' }}>
                   <strong>{a.title}</strong>
                   <div style={{ fontSize: 12, color: '#666' }}>статус: {a.status}, работы: {new Date(a.date_time).toLocaleString('ru-RU')}</div>
+                  {a.payment_status === 'waiting_payment' && (
+                    <div style={{ fontSize: 11, color: '#d48806', marginTop: 4 }}>Торги завершены, ожидается оплата</div>
+                  )}
+                  {a.status === 'paid' && (
+                    <div style={{ fontSize: 11, color: '#389e0d', marginTop: 4 }}>
+                      Оплачено{a.loader_marked_done && !a.customer_confirmed_done ? ', грузчик отметил выполнение — подтвердите после работ' : ''}
+                    </div>
+                  )}
                   {a.status === 'active' && (
                     <button
                       type="button"
@@ -993,6 +1062,47 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
                       style={{ marginTop: 6, padding: '4px 8px', fontSize: 12 }}
                     >
                       Удалить
+                    </button>
+                  )}
+                  {a.payment_status === 'waiting_payment' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!backendUser) return;
+                        setLoading(true);
+                        try {
+                          await axios.post(`${API_BASE}/auctions/${a.id}/pay`, { user_id: backendUser.id });
+                          await loadMyAuctions(backendUser.id);
+                        } catch {
+                          setError('Не удалось выполнить оплату (тест).');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      style={{ marginTop: 6, marginLeft: 8, padding: '4px 8px', fontSize: 12 }}
+                    >
+                      Оплатить (тест)
+                    </button>
+                  )}
+                  {a.status === 'paid' && a.loader_marked_done && !a.customer_confirmed_done && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!backendUser) return;
+                        if (!window.confirm('Подтвердить, что работы выполнены?')) return;
+                        setLoading(true);
+                        try {
+                          await axios.post(`${API_BASE}/auctions/${a.id}/confirm-complete`, { user_id: backendUser.id });
+                          await loadMyAuctions(backendUser.id);
+                        } catch {
+                          setError('Не удалось подтвердить выполнение работ.');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      style={{ marginTop: 6, marginLeft: 8, padding: '4px 8px', fontSize: 12 }}
+                    >
+                      Подтвердить выполнение
                     </button>
                   )}
                 </div>
@@ -1031,6 +1141,29 @@ hash: ${typeof location !== 'undefined' ? location.hash : 'n/a'}`}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDescription(e.target.value)}
               style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
             />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, color: '#555' }}>Адрес (для уведомлений грузчикам видна только улица)</label>
+              <input
+                placeholder="Улица"
+                value={street}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStreet(e.target.value)}
+                style={{ padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  placeholder="Дом"
+                  value={house}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHouse(e.target.value)}
+                  style={{ flex: 1, padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
+                />
+                <input
+                  placeholder="Квартира (необязательно)"
+                  value={flat}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFlat(e.target.value)}
+                  style={{ flex: 1, padding: 8, borderRadius: 8, border: '1px solid #ccc' }}
+                />
+              </div>
+            </div>
             <button
               type="button"
               disabled={loading}

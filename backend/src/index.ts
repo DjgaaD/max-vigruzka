@@ -76,17 +76,9 @@ async function sendMaxMessage(userId: number, text: string, auctionId?: number) 
 
   const messagePayload = {
     text,
-    attachments: config.maxWebAppId ? [{
-      type: 'inline_keyboard' as const,
-      payload: {
-        buttons: [[{
-          type: 'link' as const,
-          text: auctionId ? 'Открыть в приложении' : 'Открыть приложение',
-          // Откроет наше миниприложение внутри MAX на главном экране
-          url: `https://max.ru/?startapp=${encodeURIComponent(config.maxWebAppId)}`
-        }]]
-      }
-    }] : undefined
+    // Кнопку убираем, так как deeplink в мини‑приложение сейчас работает нестабильно.
+    // При необходимости можно будет вернуть attachments с inline_keyboard.
+    attachments: undefined
   };
 
   try {
@@ -256,10 +248,13 @@ app.get('/users/profile', async (req, res) => {
 
 // Создание аукциона заказчиком
 app.post('/auctions', async (req, res) => {
-  const { user_id, title, description, cargo_params, date_time, auction_ends_at } = req.body as {
+  const { user_id, title, description, street, house, flat, cargo_params, date_time, auction_ends_at } = req.body as {
     user_id: number;
     title: string;
     description?: string;
+    street?: string;
+    house?: string;
+    flat?: string;
     cargo_params?: unknown;
     date_time: string;
     auction_ends_at: string;
@@ -281,10 +276,10 @@ app.post('/auctions', async (req, res) => {
     }
 
     const result = await client.query(
-      `insert into auctions (customer_id, title, description, cargo_params, date_time, auction_ends_at, status)
-       values ($1, $2, $3, $4, $5, $6, 'active')
+      `insert into auctions (customer_id, title, description, street, house, flat, cargo_params, date_time, auction_ends_at, status)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')
        returning *`,
-      [user_id, title, description || null, cargo_params || null, date_time, auction_ends_at]
+      [user_id, title, description || null, street || null, house || null, flat || null, cargo_params || null, date_time, auction_ends_at]
     );
 
     const auction = result.rows[0];
@@ -299,9 +294,10 @@ app.post('/auctions', async (req, res) => {
     console.log('Грузчики:', loadersResult.rows);
 
     // Рассылаем уведомления грузчикам
+    const shortAddress = street ? `\n🏙 Адрес: ${street}` : '';
     const messageText =
       `🚚 Новая заявка на перевозку!\n\n` +
-      `📋 ${title}${description ? '\n' + description : ''}\n` +
+      `📋 ${title}${description ? '\n' + description : ''}${shortAddress}\n` +
       `⏰ Дата: ${new Date(date_time).toLocaleString('ru-RU')}\n` +
       `⏳ Торги до: ${new Date(auction_ends_at).toLocaleString('ru-RU')}\n\n` +
       `Чтобы сделать ставку:\n` +
@@ -341,6 +337,117 @@ app.get('/auctions/my', async (req, res) => {
       [userId]
     );
     res.json({ auctions: result.rows });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Оплата заявки заказчиком (триггер)
+app.post('/auctions/:id/pay', async (req, res) => {
+  const auctionId = Number(req.params.id);
+  const { user_id } = req.body as { user_id?: number };
+  if (!auctionId || !user_id) {
+    return res.status(400).json({ error: 'auction id and user_id are required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const auctionRes = await client.query(
+      `select a.*, 
+              c.max_user_id as customer_max_user_id,
+              c.first_name as customer_first_name,
+              c.last_name as customer_last_name,
+              c.username  as customer_username,
+              l.max_user_id as loader_max_user_id,
+              l.first_name as loader_first_name,
+              l.last_name as loader_last_name,
+              l.username  as loader_username
+       from auctions a
+       join users c on c.id = a.customer_id
+       left join users l on l.id = a.winner_loader_id
+       where a.id = $1`,
+      [auctionId]
+    );
+    if (auctionRes.rowCount === 0) {
+      return res.status(404).json({ error: 'auction not found' });
+    }
+    const auction = auctionRes.rows[0];
+    if (auction.customer_id !== user_id) {
+      return res.status(403).json({ error: 'only owner can pay' });
+    }
+    if (auction.status !== 'finished' || auction.payment_status !== 'waiting_payment') {
+      return res.status(400).json({ error: 'auction is not waiting for payment' });
+    }
+    if (!auction.winner_loader_id) {
+      return res.status(400).json({ error: 'no winner for this auction' });
+    }
+
+    const bidsRes = await client.query(
+      'select * from bids where auction_id = $1 and loader_id = $2 order by amount asc, created_at asc limit 1',
+      [auctionId, auction.winner_loader_id]
+    );
+    if (bidsRes.rowCount === 0) {
+      return res.status(400).json({ error: 'winner bid not found' });
+    }
+    const winnerBid = bidsRes.rows[0];
+
+    // Получаем процент сервиса
+    const feeRes = await client.query('select service_fee_percent from service_settings where id = 1');
+    const feePercent = Number(feeRes.rows[0]?.service_fee_percent) || 10;
+    const price = Number(winnerBid.amount);
+    const payout = Math.round(price * (1 - feePercent / 100) * 100) / 100;
+
+    await client.query(
+      'update auctions set payment_status = $2, status = $3, loader_payout = $4 where id = $1',
+      [auctionId, 'paid', 'paid', payout]
+    );
+
+    // Сообщение заказчику с контактами грузчика
+    if (auction.customer_max_user_id && auction.loader_first_name) {
+      const customerName =
+        (auction.customer_first_name || '') +
+        (auction.customer_last_name ? ' ' + auction.customer_last_name : '');
+      const loaderName =
+        (auction.loader_first_name || '') +
+        (auction.loader_last_name ? ' ' + auction.loader_last_name : '');
+      const fullAddressParts = [auction.street, auction.house, auction.flat && `кв. ${auction.flat}`].filter(Boolean);
+      const textLines = [
+        customerName ? `Здравствуйте, ${customerName}!` : 'Здравствуйте!',
+        '',
+        `Вы оплатили заявку «${auction.title}».`,
+        '',
+        `Грузчик: ${loaderName}` + (auction.loader_username ? ` (@${auction.loader_username})` : ''),
+        `Сумма: ${price}`,
+        fullAddressParts.length ? `Адрес: ${fullAddressParts.join(', ')}` : '',
+        '',
+        'Созвонитесь с грузчиком и согласуйте детали работ.'
+      ].filter(Boolean);
+      await sendMaxMessage(auction.customer_max_user_id, textLines.join('\n'), auctionId);
+    }
+
+    // Сообщение грузчику о победе и оплате
+    if (auction.loader_max_user_id) {
+      const customerName =
+        (auction.customer_first_name || '') +
+        (auction.customer_last_name ? ' ' + auction.customer_last_name : '');
+      const fullAddressParts = [auction.street, auction.house, auction.flat && `кв. ${auction.flat}`].filter(Boolean);
+      const textLines = [
+        `Поздравляем! Вы выиграли заявку «${auction.title}».`,
+        '',
+        customerName ? `Заказчик: ${customerName}` + (auction.customer_username ? ` (@${auction.customer_username})` : '') : '',
+        `Сумма: ${price}`,
+        fullAddressParts.length ? `Адрес: ${fullAddressParts.join(', ')}` : '',
+        '',
+        'Заказчик произвёл оплату в сервисе. Свяжитесь с ним и выполните работу.'
+      ].filter(Boolean);
+      await sendMaxMessage(auction.loader_max_user_id, textLines.join('\n'), auctionId);
+    }
+
+    res.json({ ok: true });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(e);
@@ -449,6 +556,128 @@ app.post('/bids', async (req, res) => {
 
     res.json({ bid: result.rows[0] });
   } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Грузчик отмечает, что работы выполнены
+app.post('/auctions/:id/complete-from-loader', async (req, res) => {
+  const auctionId = Number(req.params.id);
+  const { loader_id } = req.body as { loader_id?: number };
+  if (!auctionId || !loader_id) {
+    return res.status(400).json({ error: 'auction id and loader_id are required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const auctionRes = await client.query(
+      `select a.*, 
+              c.max_user_id as customer_max_user_id,
+              c.first_name as customer_first_name,
+              c.last_name as customer_last_name
+       from auctions a
+       join users c on c.id = a.customer_id
+       where a.id = $1`,
+      [auctionId]
+    );
+    if (auctionRes.rowCount === 0) {
+      return res.status(404).json({ error: 'auction not found' });
+    }
+    const auction = auctionRes.rows[0];
+    if (auction.winner_loader_id !== loader_id) {
+      return res.status(403).json({ error: 'only winner loader can mark complete' });
+    }
+    if (auction.payment_status !== 'paid') {
+      return res.status(400).json({ error: 'auction is not paid yet' });
+    }
+
+    await client.query('update auctions set loader_marked_done = true where id = $1', [auctionId]);
+
+    if (auction.customer_max_user_id) {
+      const customerName =
+        (auction.customer_first_name || '') +
+        (auction.customer_last_name ? ' ' + auction.customer_last_name : '');
+      const textLines = [
+        customerName ? `Здравствуйте, ${customerName}!` : 'Здравствуйте!',
+        '',
+        `Грузчик по заявке «${auction.title}» отметил, что работы выполнены.`,
+        'Пожалуйста, зайдите в мини‑приложение и подтвердите выполнение работ.'
+      ];
+      await sendMaxMessage(auction.customer_max_user_id, textLines.join('\n'), auctionId);
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Заказчик подтверждает выполнение работ
+app.post('/auctions/:id/confirm-complete', async (req, res) => {
+  const auctionId = Number(req.params.id);
+  const { user_id } = req.body as { user_id?: number };
+  if (!auctionId || !user_id) {
+    return res.status(400).json({ error: 'auction id and user_id are required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const auctionRes = await client.query(
+      `select a.*, 
+              c.max_user_id as customer_max_user_id,
+              l.max_user_id as loader_max_user_id
+       from auctions a
+       join users c on c.id = a.customer_id
+       left join users l on l.id = a.winner_loader_id
+       where a.id = $1`,
+      [auctionId]
+    );
+    if (auctionRes.rowCount === 0) {
+      return res.status(404).json({ error: 'auction not found' });
+    }
+    const auction = auctionRes.rows[0];
+    if (auction.customer_id !== user_id) {
+      return res.status(403).json({ error: 'only owner can confirm' });
+    }
+    if (auction.payment_status !== 'paid') {
+      return res.status(400).json({ error: 'auction must be paid to complete' });
+    }
+    if (!auction.winner_loader_id) {
+      return res.status(400).json({ error: 'no winner loader' });
+    }
+
+    await client.query('begin');
+    await client.query(
+      'update auctions set payment_status = $2, status = $3, customer_confirmed_done = true where id = $1',
+      [auctionId, 'completed', 'completed']
+    );
+    if (auction.loader_payout != null) {
+      await client.query(
+        'update users set balance = coalesce(balance, 0) + $2 where id = $1',
+        [auction.winner_loader_id, auction.loader_payout]
+      );
+    }
+    await client.query('commit');
+
+    if (auction.loader_max_user_id) {
+      const textLines = [
+        `Заказчик подтвердил выполнение работ по заявке «${auction.title}».`,
+        auction.loader_payout != null ? `На ваш внутренний счёт зачислено: ${auction.loader_payout}` : ''
+      ].filter(Boolean);
+      await sendMaxMessage(auction.loader_max_user_id, textLines.join('\n'), auctionId);
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    await pool.query('rollback').catch(() => {});
+    // eslint-disable-next-line no-console
     console.error(e);
     res.status(500).json({ error: 'Internal error' });
   } finally {
@@ -734,6 +963,7 @@ app.get('/admin/stats', async (req, res) => {
     const auctionsActive = await client.query("select count(*) as c from auctions where status in ('active','paid')");
     const bidsTotal = await client.query('select count(*) as c from bids');
     const ratingsTotal = await client.query('select count(*) as c from ratings');
+    const feeRes = await client.query('select service_fee_percent from service_settings where id = 1');
 
     res.json({
       users_total: Number(usersTotal.rows[0]?.c) || 0,
@@ -742,7 +972,8 @@ app.get('/admin/stats', async (req, res) => {
       auctions_total: Number(auctionsTotal.rows[0]?.c) || 0,
       auctions_active: Number(auctionsActive.rows[0]?.c) || 0,
       bids_total: Number(bidsTotal.rows[0]?.c) || 0,
-      ratings_total: Number(ratingsTotal.rows[0]?.c) || 0
+      ratings_total: Number(ratingsTotal.rows[0]?.c) || 0,
+      service_fee_percent: Number(feeRes.rows[0]?.service_fee_percent) || 10
     });
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -798,11 +1029,6 @@ async function finishAuctionInternally(auctionId: number): Promise<{ ok: true } 
       return { ok: false, code: 'not_active', error: 'auction is not active' };
     }
 
-    const updated = await client.query(
-      'update auctions set status = $2, auction_ends_at = now() where id = $1 returning *',
-      [auctionId, 'finished']
-    );
-
     // Определяем победившую ставку
     const bidsRes = await client.query(
       `select b.*, u.first_name, u.last_name, u.username
@@ -813,14 +1039,23 @@ async function finishAuctionInternally(auctionId: number): Promise<{ ok: true } 
       [auctionId]
     );
 
+    let winner: any | null = null;
+    if (bidsRes.rowCount > 0) {
+      winner = bidsRes.rows[0];
+    }
+
+    const updated = await client.query(
+      'update auctions set status = $2, auction_ends_at = now(), winner_loader_id = $3, payment_status = $4 where id = $1 returning *',
+      [auctionId, 'finished', winner ? winner.loader_id : null, winner ? 'waiting_payment' : null]
+    );
+
     if (auction.customer_max_user_id) {
-      if (bidsRes.rowCount === 0) {
+      if (!winner) {
         const text =
           `Заявка «${auction.title}» завершена.\n\n` +
           `К сожалению, ни один грузчик не сделал ставку.`;
         await sendMaxMessage(auction.customer_max_user_id, text, auctionId);
       } else {
-        const winner = bidsRes.rows[0];
         const customerName =
           (auction.customer_first_name || '') +
           (auction.customer_last_name ? ' ' + auction.customer_last_name : '');
@@ -898,6 +1133,52 @@ app.post('/admin/broadcast', async (req, res) => {
       sent += 1;
     }
     res.json({ ok: true, role, recipients: usersRes.rowCount, sent });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Настройка процента сервиса
+app.get('/admin/service-fee', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const client = await pool.connect();
+  try {
+    const feeRes = await client.query('select service_fee_percent from service_settings where id = 1');
+    res.json({ service_fee_percent: Number(feeRes.rows[0]?.service_fee_percent) || 10 });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(e);
+    res.status(500).json({ error: 'Internal error' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/admin/service-fee', async (req, res) => {
+  const check = await requireAdmin(req);
+  if (!check.ok) return res.status(check.status).json(check.body);
+
+  const { percent } = req.body as { percent?: number };
+  const value = Number(percent);
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    return res.status(400).json({ error: 'percent must be between 0 and 100' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `insert into service_settings (id, service_fee_percent)
+       values (1, $1)
+       on conflict (id) do update set service_fee_percent = excluded.service_fee_percent`,
+      [value]
+    );
+    res.json({ ok: true, service_fee_percent: value });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error(e);
