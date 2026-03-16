@@ -5,7 +5,8 @@ export const pool = new Pool({
   host: config.db.host,
   port: config.db.port,
   user: config.db.user,
-  password: config.db.password,
+  // Страхуемся: пароль в pg должен быть строкой
+  password: String(config.db.password ?? ''),
   database: config.db.database
 });
 
