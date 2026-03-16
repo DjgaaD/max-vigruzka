@@ -82,7 +82,8 @@ async function sendMaxMessage(userId: number, text: string, auctionId?: number) 
         buttons: [[{
           type: 'link' as const,
           text: 'Открыть заявку',
-          url: `https://mintday.ru?startapp=auction_${auctionId}`
+          // startapp-ссылка, чтобы миниприложение открылось внутри MAX
+          url: `https://max.ru/?startapp=auction_${auctionId}`
         }]]
       }
     }] : undefined
