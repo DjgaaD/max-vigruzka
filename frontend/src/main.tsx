@@ -1012,8 +1012,8 @@ const AdminWebEntry: React.FC = () => {
     if (typeof window === 'undefined') return null;
     return window.localStorage.getItem(ADMIN_TOKEN_KEY);
   });
-  const [login, setLogin] = React.useState('');
-  const [password, setPassword] = React.useState('');
+  const [login, setLogin] = React.useState('a@gertner.vip');
+  const [password, setPassword] = React.useState('My565421');
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [serverConfigured, setServerConfigured] = React.useState<boolean | null>(null);
@@ -1054,7 +1054,7 @@ const AdminWebEntry: React.FC = () => {
         <p style={{ color: '#666', fontSize: 14 }}>Поиск грузчиков — mintday.ru</p>
         {serverConfigured === false && (
           <p style={{ color: '#c00', marginBottom: 16, fontSize: 13 }}>
-            Сервер не настроен: на бэкенде не заданы ADMIN_LOGIN и ADMIN_PASSWORD (файл .env на сервере или переменные окружения). Запрос к API может не доходить до сервера.
+            Сервер не настроен: нужно запустить деплой (deploy-frontend.bat), чтобы скопировать .env файл и перезапустить бэкенд.
           </p>
         )}
         {error && <p style={{ color: 'red', marginBottom: 16 }}>{error}</p>}
